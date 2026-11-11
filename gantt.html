@@ -145,6 +145,12 @@ cw.addEventListener("click",e=>{
  lanes[g.dataset.l].items.push(i);sel=i;mark(true);render();panel();
 });
 
+// click on empty chart area deselects
+cw.addEventListener("click",e=>{
+ if(!editing||!sel||dragging||e.target.closest("g[data-i],g.add"))return;
+ sel=null;render();panel();
+});
+
 function panel(){
  if(!sel){pn.style.display="none";return}
  const l=lanes.find(l=>l.items.includes(sel));
