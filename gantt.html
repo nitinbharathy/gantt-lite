@@ -215,14 +215,20 @@ cw.addEventListener("mousedown",e=>{
  const it=lanes[g.dataset.l].items[g.dataset.i],px0=svgX(e),mode=zone(it,px0),o=[...it.s];
  e.preventDefault();
  const was=sel===it,gl=g.dataset.l,gi=g.dataset.i;
- let moved=false;
+ let moved=false,axis=null;const startIdx=lanes[gl].items.indexOf(it);
  const mm=ev=>{
-  const dx=ev.clientX-e.clientX;
-  if(!moved&&Math.abs(dx)<3)return;
+  const dx=ev.clientX-e.clientX,dy=ev.clientY-e.clientY;
+  if(!moved&&Math.abs(dx)<3&&Math.abs(dy)<3)return;
   moved=true;dragging=true;tip.style.display="none";
   if(mode=="sel")return;
+  if(!axis)axis=Math.abs(dy)>Math.abs(dx)?"v":"h"; // lock to the first direction dragged
   const dw=snap((svgX(ev)-px0)/mw);
-  if(mode=="mv"){const d=Math.max(-o[0],Math.min(END-o[1],dw));it.s=[o[0]+d,o[1]+d]}
+  if(mode=="mv"&&axis=="v"){
+   // vertical drag reorders the item within its lane (no sideways movement)
+   const arr=lanes[gl].items,cur=arr.indexOf(it),k=W/cw.querySelector("svg").getBoundingClientRect().width;
+   const ni=Math.max(0,Math.min(arr.length-1,startIdx+Math.round(dy*k/RH)));
+   if(ni!==cur){arr.splice(cur,1);arr.splice(ni,0,it)}}
+  else if(mode=="mv"){const d=Math.max(-o[0],Math.min(END-o[1],dw));it.s=[o[0]+d,o[1]+d]}
   else if(mode=="a")it.s=[Math.max(0,Math.min(o[0]+dw,o[1])),o[1]];
   else it.s=[o[0],Math.min(END,Math.max(o[1]+dw,o[0]))];
   mark(true);render();
