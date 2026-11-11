@@ -1,4 +1,4 @@
-# roadmap-timeline
+# gantt-lite
 
 A single-page roadmap timeline chart. Hand-written SVG and JS, no build step, no dependencies. Open the HTML in a browser.
 
@@ -28,10 +28,13 @@ Time is in weeks from the start date, 4 weeks to a month. The comment header in 
 
 Set `const editable=true` in `roadmap.js`, then click **Edit** in the top right.
 
-- Drag a bar to move it. Drag an end to resize it.
+- Drag a bar sideways to move it in time. Drag an end to resize it.
+- Drag a bar up or down to reorder it within its lane. A drag locks to the direction you start in, so release and drag again to move it the other way.
 - Click a bar to select it. Click it again to rename it in place.
-- The bottom panel edits type, weeks, hover text, milestone and TBC. It also reorders and deletes items.
-- **Esc** unselects.
+- The bottom panel edits type, lane (moves the item to the end of another lane), weeks, hover text, milestone and TBC. It also reorders (up/down buttons) and deletes items.
+- **Ctrl+Z** undoes and **Ctrl+Shift+Z** (or **Ctrl+Y**) redoes, up to 200 steps. A drag, a typing burst or a button click is one step. History is lost on reload. Inside a text field Ctrl+Z stays the browser's own text undo.
+- **Delete** or **Backspace** deletes the selected item (not while typing in a field).
+- **Esc** or a click on an empty part of the chart unselects.
 - **Save** writes to `roadmap.js` through a file picker (Chrome or Edge only).
 - **Export** copies the new data to the clipboard. Paste it over everything from `const editable` down in `roadmap.js`.
 - **Discard** reloads the page and drops unsaved changes.

@@ -119,7 +119,37 @@ eb.onclick=()=>{
 document.getElementById("dc").onclick=()=>{if(!dirty){st.textContent="Nothing to discard";return}if(confirm("Discard unsaved changes?")){dirty=false;location.reload()}};
 const st=ub;
 const upd=()=>{const dd=editing&&dirty;dcb.style.display=dd?"":"none";svb.style.display=dd?"":"none";eb.style.display=dd?"none":"";cpb.style.display=editing?"":"none"};
-const mark=d=>{dirty=d;st.textContent=d?"Unsaved changes":"";st.className=d?"dirty":"";upd()};
+/* ---------- undo / redo: whole-state snapshots, one per gesture ---------- */
+const MAXU=200,snap0=()=>J(lanes,(k,v)=>k=="row"||k=="lines"?undefined:v);
+let cur=snap0(),saved=cur,undoS=[],redoS=[],ct=null;
+const setDirty=d=>{dirty=d;st.textContent=d?"Unsaved changes":"";st.className=d?"dirty":"";upd()};
+function commit(){
+ clearTimeout(ct);ct=null;const n=snap0();if(n===cur)return;
+ undoS.push({s:cur,sel:selAt});if(undoS.length>MAXU)undoS.shift();redoS=[];cur=n;selAt=where(sel);
+}
+let selAt=null; // selection (lane, index) at the time of the last commit, so undo can restore it
+const where=i=>{for(let a=0;a<lanes.length;a++){const b=lanes[a].items.indexOf(i);if(b>=0)return[a,b]}return null};
+function restore(s,at){
+ lanes.length=0;lanes.push(...JSON.parse(s));cur=s;
+ sel=at&&lanes[at[0]]&&lanes[at[0]].items[at[1]]||null;selAt=where(sel);
+ setDirty(s!==saved);render();panel();
+}
+function undo(){commit();const u=undoS.pop();if(!u)return;redoS.push({s:cur,sel:where(sel)});restore(u.s,u.sel)}
+function redo(){commit();const r=redoS.pop();if(!r)return;undoS.push({s:cur,sel:where(sel)});restore(r.s,r.sel)}
+const mark=d=>{
+ if(!d){saved=snap0();cur=saved;setDirty(false);return}
+ setDirty(true);
+ if(dragging)return; // a drag commits once, on mouse up
+ const a=document.activeElement;
+ if(a&&a.matches&&a.matches("input[type=text]")){clearTimeout(ct);ct=setTimeout(commit,700)} // typing: one step per pause
+ else commit();
+};
+document.addEventListener("keydown",e=>{
+ if(!editing||!(e.ctrlKey||e.metaKey)||e.target.closest("input,select,textarea,[contenteditable]"))return;
+ const k=e.key.toLowerCase();
+ if(k=="z"&&!e.shiftKey){e.preventDefault();undo()}
+ else if((k=="z"&&e.shiftKey)||k=="y"){e.preventDefault();redo()}
+});
 upd();
 window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
 
@@ -157,6 +187,7 @@ function panel(){
  pn.style.display="flex";
  pn.innerHTML=`<label>Title<input type="text" id="p_t" size="34"></label>
  <label>Type<select id="p_k">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v[0]}</option>`).join("")}</select></label>
+ <label>Lane<select id="p_l">${lanes.map((x,n)=>`<option value="${n}">${esc(x.n)}</option>`).join("")}</select></label>
  <label>Start wk<input type="number" id="p_a" step="0.5" style="width:60px"></label>
  <label>End wk<input type="number" id="p_b" step="0.5" style="width:60px"></label>
  <label>Hover text<input type="text" id="p_d" size="40"></label>
@@ -168,6 +199,8 @@ function panel(){
  const up=f=>{f();mark(true);render()};
  $("p_t").oninput=e=>up(()=>sel.t=e.target.value);
  $("p_k").onchange=e=>up(()=>sel.k=e.target.value);
+ $("p_l").value=lanes.indexOf(l);
+ $("p_l").onchange=e=>{const t=lanes[+e.target.value];if(t===l)return;l.items.splice(l.items.indexOf(sel),1);t.items.push(sel);mark(true);render();panel()};
  $("p_a").onchange=e=>up(()=>sel.s[0]=Math.min(+e.target.value,sel.s[1]));
  $("p_b").onchange=e=>up(()=>sel.s[1]=Math.max(+e.target.value,sel.s[0]));
  $("p_d").oninput=e=>up(()=>sel.d=e.target.value);
@@ -192,6 +225,14 @@ function inlineEdit(it,li,ii){
  inp.onblur=()=>fin(true);
 }
 document.addEventListener("keydown",e=>{if(e.key=="Escape"&&editing&&sel&&!dragging){sel=null;render();panel()}});
+// Delete / Backspace removes the selected item (not while typing in a field)
+document.addEventListener("keydown",e=>{
+ if((e.key!="Delete"&&e.key!="Backspace")||!editing||!sel||dragging)return;
+ if(e.target.closest("input,select,textarea,[contenteditable]"))return;
+ e.preventDefault();
+ const l=lanes.find(l=>l.items.includes(sel));if(!l)return;
+ l.items.splice(l.items.indexOf(sel),1);sel=null;mark(true);render();panel();
+});
 
 // drag: move / resize start / resize end, snapping to half a week
 const svgX=e=>{const r=cw.querySelector("svg").getBoundingClientRect();return (e.clientX-r.left)*W/r.width};
@@ -235,7 +276,7 @@ cw.addEventListener("mousedown",e=>{
  };
  const mu=()=>{
   document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);
-  dragging=false;sel=it;render();panel();
+  dragging=false;sel=it;commit();render();panel();
   if(!moved&&was)inlineEdit(it,gl,gi);
  };
  document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);
