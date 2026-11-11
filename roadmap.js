@@ -1,4 +1,4 @@
-// SAMPLE roadmap data for the timeline page. Fictional, for testing. Rename to roadmap.js to use it (keep it in the same folder as the HTML).
+// Roadmap data for gantt.html (keep it in the same folder). Fictional sample data. Full format spec for people and LLMs: ROADMAP-FORMAT.md.
 //
 // FORMAT
 // Time is counted in WEEKS from 1 Aug 2027, with 4 weeks to a month (so the 11 months Aug to Jun are weeks 0 to 44).
@@ -6,7 +6,7 @@
 //            Early = week 1 of the month, mid = weeks 2-3, late = week 4. e.g. Late Nov = [15,16], Mid-end Dec = [17,20].
 // months   : month labels, left to right (4 weeks each).
 // quarters : [label, startWeek, endWeek, phase, colour]. Phase is the text under the heading.
-// lanes    : [{ n: lane name, info: optional list of phrases, joined with commas into one wrapped text block under the lane name, items: [...] }]. Each item gets its own row, in order.
+// lanes    : [{ n: lane name, info: optional list of text phrases, joined with ", " into one wrapped text block under the lane name (the editor saves one phrase of free text), items: [...] }]. Each item gets its own row, in order.
 // item     : t  title shown next to the bar
 //            k  type and colour: dev = Development (grey), uat = UAT and training, go = Onboarding / cutover, roll = Rollout (purple), ref = Detailed on another slide (orange), adm = Admin (light grey)
 //            s  [startWeek, endWeek]. Each white tick inside a bar is 1 week.

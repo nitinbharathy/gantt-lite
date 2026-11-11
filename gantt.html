@@ -30,11 +30,15 @@ button{font:12px system-ui,sans-serif;padding:4px 8px;cursor:pointer}
 <script src="roadmap.js"></script>
 <script>
 document.title=title;document.getElementById("h").textContent=title;
-const col=Object.fromEntries(Object.entries(kinds).map(([k,v])=>[k,v[1]]));
-document.getElementById("lg").innerHTML=Object.values(kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${v[0]}</span>`).join("")
+const col={};
+function refreshKinds(){ // rebuild the colour map and the legend from `kinds` (also called by the types editor)
+for(const k in col)delete col[k];
+Object.entries(kinds).forEach(([k,v])=>col[k]=v[1]);
+document.getElementById("lg").innerHTML=Object.values(kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${esc(v[0])}</span>`).join("")
 +`<span><i class="sw" style="background:${msColor};transform:rotate(45deg) scale(.8)"></i>Milestone</span>`
 +`<span><i class="sw" style="border:1.5px dashed #6B7280;background:rgba(107,114,128,.18)"></i>Dashed = plan not final (TBC)</span>`
 +legend.map(t=>`<span>${t}</span>`).join("");
+}
 document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${lullLabel}`;
 const END=quarters[quarters.length-1][2];
 const W=1300,LW=210,TOP=70,RH=28,PAD=12,mw=(W-LW-10)/END;
@@ -43,14 +47,17 @@ const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"
 const wrap=(t,n=34)=>{const o=[];let c="";t.split(" ").forEach(w=>{if(c&&(c+" "+w).length>n){o.push(c);c=w}else c=c?c+" "+w:w});o.push(c);return o};
 const WK=1;
 const wk=(i,yy)=>{let o="";if(i.s[1]-i.s[0]<=WK+0.01)return o;for(let m=i.s[0]+WK;m<i.s[1]-0.01;m+=WK){o+=`<line x1="${x(m)}" x2="${x(m)}" y1="${yy+4}" y2="${yy+22}" stroke="#fff" stroke-width="1" opacity=".8"/>`}return o};
+refreshKinds();
 const cw=document.getElementById("cw");
+let typesOpen=false; // types editor panel open (while editing)
 let sel=null; // selected item (while editing)
+let selL=null; // selected lane (while editing)
 let editing=false; // true only after the Edit button is clicked
 
 function render(){
 let y=TOP,rows=[];
 lanes.forEach(l=>{l.items.forEach((i,n)=>i.row=n);l.lines=[];if(l.info&&l.info.length)wrap(l.info.join(", ")).forEach(w=>l.lines.push(w));const nr=Math.max(l.items.length+(editing?1:0),Math.ceil((l.lines.length*15+24)/RH));rows.push({l,y,nr});y+=nr*RH+PAD});
-const H=y+10;
+const H=y+10+(editing?32:0);
 let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
 quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
 months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
@@ -61,8 +68,10 @@ lulls.forEach(u=>{s+=`<g class="lull" style="${lullOn?"":"display:none"}" data-t
 quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
 s+=`<line x1="${x(todayWeek)}" x2="${x(todayWeek)}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${x(todayWeek)+3}" y="${H-2}" fill="#d1242f" style="fill:#d1242f">today</text>`;
 rows.forEach(({l,y,nr},li)=>{
+ if(editing){const on=selL===l;s+=`<g class="ln" data-ln="${li}" style="cursor:pointer"><rect x="0" y="${y}" width="${LW-8}" height="${nr*RH}" rx="4" fill="${on?"#0969da":"#fff"}" fill-opacity="${on?.08:0}" ${on?'stroke="#0969da" stroke-dasharray="3 2"':""}/>`}
  s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
  l.lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${t}</text>`});
+ if(editing)s+="</g>";
  s+=`<line x1="0" x2="${W}" y1="${y+nr*RH+PAD/2}" y2="${y+nr*RH+PAD/2}" stroke="#e6e8eb"/>`;
  if(editing)s+=`<g class="add" data-l="${li}" style="cursor:pointer"><rect x="${LW+2}" y="${y+l.items.length*RH+6}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="${LW+10}" y="${y+l.items.length*RH+20}" style="fill:#0969da">+ Add item</text></g>`;
  l.items.forEach((i,ii)=>{
@@ -84,6 +93,7 @@ rows.forEach(({l,y,nr},li)=>{
   }
  });
 });
+if(editing)s+=`<g class="addl" style="cursor:pointer"><rect x="2" y="${y+2}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="10" y="${y+16}" style="fill:#0969da">+ Add lane</text></g>`;
 s+="</svg>";
 cw.innerHTML=s;
 }
@@ -108,19 +118,21 @@ let fh=null,dirty=false;
 const eb=document.createElement("button");eb.textContent="Edit";const ub=document.createElement("span");ub.id="st";ub.style.cssText="font:12px system-ui,sans-serif;text-align:right";
 const ta=document.createElement("div");ta.style.cssText="position:fixed;top:12px;right:16px;z-index:10;display:flex;gap:8px;align-items:center";
 ta.innerHTML=`<button id="dc">Discard</button><button id="cp">Export</button><button id="sv" style="background:#0969da;color:#fff;border:1px solid #0969da;border-radius:4px">Save</button>`;
-ta.prepend(ub);ta.append(eb);document.body.append(ta);
+const tyb=document.createElement("button");tyb.textContent="Types";tyb.title="Add, rename, recolour or remove item types";
+tyb.onclick=()=>{typesOpen=!typesOpen;sel=null;selL=null;render();panel()};
+ta.prepend(ub);ta.append(tyb);ta.append(eb);document.body.append(ta);
 const dcb=ta.querySelector("#dc"),cpb=ta.querySelector("#cp"),svb=ta.querySelector("#sv");
 eb.onclick=()=>{
  editing=!editing;
  eb.textContent=editing?"Done":"Edit";
  document.documentElement.classList.toggle("ed",editing);eb.title=editing?"Drag a bar to move, drag its ends to resize, click to edit":"";upd();
- sel=null;cw.style.cursor="";render();panel();
+ sel=null;selL=null;typesOpen=false;cw.style.cursor="";render();panel();
 };
 document.getElementById("dc").onclick=()=>{if(!dirty){st.textContent="Nothing to discard";return}if(confirm("Discard unsaved changes?")){dirty=false;location.reload()}};
 const st=ub;
-const upd=()=>{const dd=editing&&dirty;dcb.style.display=dd?"":"none";svb.style.display=dd?"":"none";eb.style.display=dd?"none":"";cpb.style.display=editing?"":"none"};
+const upd=()=>{const dd=editing&&dirty;dcb.style.display=dd?"":"none";svb.style.display=dd?"":"none";eb.style.display=dd?"none":"";cpb.style.display=editing?"":"none";tyb.style.display=editing?"":"none"};
 /* ---------- undo / redo: whole-state snapshots, one per gesture ---------- */
-const MAXU=200,snap0=()=>J(lanes,(k,v)=>k=="row"||k=="lines"?undefined:v);
+const MAXU=200,snap0=()=>J([lanes,kinds],(k,v)=>k=="row"||k=="lines"?undefined:v);
 let cur=snap0(),saved=cur,undoS=[],redoS=[],ct=null;
 const setDirty=d=>{dirty=d;st.textContent=d?"Unsaved changes":"";st.className=d?"dirty":"";upd()};
 function commit(){
@@ -130,8 +142,10 @@ function commit(){
 let selAt=null; // selection (lane, index) at the time of the last commit, so undo can restore it
 const where=i=>{for(let a=0;a<lanes.length;a++){const b=lanes[a].items.indexOf(i);if(b>=0)return[a,b]}return null};
 function restore(s,at){
- lanes.length=0;lanes.push(...JSON.parse(s));cur=s;
- sel=at&&lanes[at[0]]&&lanes[at[0]].items[at[1]]||null;selAt=where(sel);
+ const p=JSON.parse(s);
+ lanes.length=0;lanes.push(...p[0]);
+ for(const k in kinds)delete kinds[k];Object.assign(kinds,p[1]);refreshKinds();cur=s;
+ sel=at&&lanes[at[0]]&&lanes[at[0]].items[at[1]]||null;selAt=where(sel);selL=null;
  setDirty(s!==saved);render();panel();
 }
 function undo(){commit();const u=undoS.pop();if(!u)return;redoS.push({s:cur,sel:where(sel)});restore(u.s,u.sel)}
@@ -141,7 +155,7 @@ const mark=d=>{
  setDirty(true);
  if(dragging)return; // a drag commits once, on mouse up
  const a=document.activeElement;
- if(a&&a.matches&&a.matches("input[type=text]")){clearTimeout(ct);ct=setTimeout(commit,700)} // typing: one step per pause
+ if(a&&a.matches&&a.matches("input[type=text],input[type=color]")){clearTimeout(ct);ct=setTimeout(commit,700)} // typing: one step per pause
  else commit();
 };
 document.addEventListener("keydown",e=>{
@@ -172,16 +186,69 @@ document.getElementById("sv").onclick=async()=>{
 cw.addEventListener("click",e=>{
  const g=e.target.closest("g.add");if(!editing||!g)return;
  const i={t:"New item",k:Object.keys(kinds)[0],s:[1,3],d:""};
- lanes[g.dataset.l].items.push(i);sel=i;mark(true);render();panel();
+ lanes[g.dataset.l].items.push(i);sel=i;selL=null;mark(true);render();panel();
+});
+// lanes: click a lane name to select it, "+ Add lane" to append one
+cw.addEventListener("click",e=>{
+ if(!editing||dragging)return;
+ if(e.target.closest("g.addl")){const l={n:"New lane",items:[]};lanes.push(l);selL=l;sel=null;mark(true);render();panel();const t=document.getElementById("p_ln");if(t){t.focus();t.select()}return}
+ const g=e.target.closest("g.ln");if(!g)return;
+ selL=lanes[g.dataset.ln];sel=null;typesOpen=false;render();panel();
 });
 
 // click on empty chart area deselects
 cw.addEventListener("click",e=>{
- if(!editing||!sel||dragging||e.target.closest("g[data-i],g.add"))return;
- sel=null;render();panel();
+ if(!editing||(!sel&&!selL)||dragging||e.target.closest("g[data-i],g.add,g.ln,g.addl"))return;
+ sel=null;selL=null;render();panel();
 });
 
+function lanePanel(){
+ const li=lanes.indexOf(selL),l=selL;
+ pn.style.display="flex";
+ pn.innerHTML=`<label>Lane name<input type="text" id="p_ln" size="30"></label>
+ <label>Description<input type="text" id="p_li" size="60"></label>
+ <button id="p_lu">Up</button><button id="p_ld">Down</button><button id="p_lx">Delete lane</button><button id="p_lo">Close</button>`;
+ const $=id=>document.getElementById(id);
+ $("p_ln").value=l.n;$("p_li").value=(l.info||[]).join(", ");
+ const up=f=>{f();mark(true);render()};
+ $("p_ln").oninput=e=>up(()=>l.n=e.target.value);
+ $("p_li").oninput=e=>up(()=>{const v=e.target.value.trim();if(v)l.info=[v];else delete l.info});
+ const mv=d=>{const n=lanes.indexOf(l),m=n+d;if(m<0||m>=lanes.length)return;[lanes[n],lanes[m]]=[lanes[m],lanes[n]];mark(true);render()};
+ $("p_lu").onclick=()=>mv(-1);$("p_ld").onclick=()=>mv(1);
+ $("p_lx").onclick=()=>{if(l.items.length&&!confirm(`Delete lane "${l.n}" and its ${l.items.length} item(s)? Ctrl+Z restores it.`))return;lanes.splice(lanes.indexOf(l),1);selL=null;mark(true);render();panel()};
+ $("p_lo").onclick=()=>{selL=null;render();panel()};
+}
+
+function typesPanel(){
+ const cnt=k=>lanes.reduce((n,l)=>n+l.items.filter(i=>i.k==k).length,0);
+ pn.style.display="flex";
+ pn.innerHTML=`<div style="display:flex;flex-direction:column;gap:6px;width:100%"><b>Item types</b>`
+ +Object.entries(kinds).map(([k,v])=>`<div style="display:flex;gap:8px;align-items:center" data-k="${esc(k).replace(/"/g,"&quot;")}"><input type="color" class="ty_c" value="${/^#[0-9a-f]{6}$/i.test(v[1])?v[1]:"#808080"}"><input type="text" class="ty_l" size="30"><span class="m">key: ${esc(k)} &middot; ${cnt(k)} item(s)</span><button class="ty_x">Delete</button></div>`).join("")
+ +`<div style="display:flex;gap:8px"><button id="ty_a">+ Add type</button><button id="ty_o">Close</button></div></div>`;
+ const up=f=>{f();mark(true);refreshKinds();render()};
+ pn.querySelectorAll("[data-k]").forEach(r=>{
+  const k=r.dataset.k;
+  r.querySelector(".ty_l").value=kinds[k][0];
+  r.querySelector(".ty_l").oninput=e=>up(()=>kinds[k][0]=e.target.value);
+  r.querySelector(".ty_c").oninput=e=>up(()=>kinds[k][1]=e.target.value);
+  r.querySelector(".ty_x").onclick=()=>{
+   const rest=Object.keys(kinds).filter(x=>x!=k),n=cnt(k);
+   if(!rest.length){alert("Keep at least one type.");return}
+   if(n&&!confirm(`${n} item(s) use "${kinds[k][0]}". They will be changed to "${kinds[rest[0]][0]}". Continue? (Ctrl+Z undoes this.)`))return;
+   lanes.forEach(l=>l.items.forEach(i=>{if(i.k==k)i.k=rest[0]}));
+   delete kinds[k];mark(true);refreshKinds();render();panel();
+  };
+ });
+ document.getElementById("ty_a").onclick=()=>{
+  let n=1;while(("t"+n) in kinds)n++;
+  kinds["t"+n]=["New type","#0E7490"];mark(true);refreshKinds();render();panel();
+  const ls=pn.querySelectorAll(".ty_l"),last=ls[ls.length-1];last.focus();last.select();
+ };
+ document.getElementById("ty_o").onclick=()=>{typesOpen=false;panel()};
+}
+
 function panel(){
+ if(sel){} else if(selL){lanePanel();return} else if(typesOpen){typesPanel();return}
  if(!sel){pn.style.display="none";return}
  const l=lanes.find(l=>l.items.includes(sel));
  pn.style.display="flex";
@@ -224,7 +291,7 @@ function inlineEdit(it,li,ii){
  inp.onkeydown=e=>{e.stopPropagation();if(e.key=="Enter")fin(true);else if(e.key=="Escape")fin(false)};
  inp.onblur=()=>fin(true);
 }
-document.addEventListener("keydown",e=>{if(e.key=="Escape"&&editing&&sel&&!dragging){sel=null;render();panel()}});
+document.addEventListener("keydown",e=>{if(e.key=="Escape"&&editing&&(sel||selL)&&!dragging){sel=null;selL=null;render();panel()}});
 // Delete / Backspace removes the selected item (not while typing in a field)
 document.addEventListener("keydown",e=>{
  if((e.key!="Delete"&&e.key!="Backspace")||!editing||!sel||dragging)return;
@@ -276,7 +343,7 @@ cw.addEventListener("mousedown",e=>{
  };
  const mu=()=>{
   document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);
-  dragging=false;sel=it;commit();render();panel();
+  dragging=false;sel=it;selL=null;typesOpen=false;commit();render();panel();
   if(!moved&&was)inlineEdit(it,gl,gi);
  };
  document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);

@@ -16,7 +16,7 @@ Keep both in the same folder. The page loads `roadmap.js` with a `<script>` tag,
 
 ## Data format
 
-Time is in weeks from the start date, 4 weeks to a month. The comment header in `roadmap.js` is the full reference. In short:
+Time is in weeks from the start date, 4 weeks to a month. The full spec, with rules, a minimal example and notes for LLMs, is in [ROADMAP-FORMAT.md](ROADMAP-FORMAT.md). The comment header in `roadmap.js` is a short version. In short:
 
 - `lanes`: each has a name, optional `info` phrases and a list of `items`. Each item gets its own row.
 - item: `t` title, `k` type (sets colour), `s` `[startWeek, endWeek]`, `d` hover text, `ms` 1 for a milestone diamond, `tbc` 1 for a dashed pale bar.
@@ -32,6 +32,8 @@ Set `const editable=true` in `roadmap.js`, then click **Edit** in the top right.
 - Drag a bar up or down to reorder it within its lane. A drag locks to the direction you start in, so release and drag again to move it the other way.
 - Click a bar to select it. Click it again to rename it in place.
 - The bottom panel edits type, lane (moves the item to the end of another lane), weeks, hover text, milestone and TBC. It also reorders (up/down buttons) and deletes items.
+- Click a lane name (left column) to edit the lane in the bottom panel: name, description (free text, wrapped on the chart), move up/down, delete lane. **+ Add lane** at the bottom of the chart adds a new one. Deleting a lane deletes its items; Ctrl+Z restores it.
+- **Types** (top right, in edit mode) opens the types editor: colour picker and label per item type, **+ Add type**, and Delete. Deleting a type that items use asks first and moves those items to the first remaining type. The legend and bars update live.
 - **Ctrl+Z** undoes and **Ctrl+Shift+Z** (or **Ctrl+Y**) redoes, up to 200 steps. A drag, a typing burst or a button click is one step. History is lost on reload. Inside a text field Ctrl+Z stays the browser's own text undo.
 - **Delete** or **Backspace** deletes the selected item (not while typing in a field).
 - **Esc** or a click on an empty part of the chart unselects.
