@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Gantt</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f2937'/%3E%3Crect x='5' y='7' width='13' height='5' rx='2' fill='%23f472b6'/%3E%3Crect x='11' y='14' width='16' height='5' rx='2' fill='%2338bdf8'/%3E%3Crect x='18' y='21' width='9' height='5' rx='2' fill='%23fbbf24'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#fff;--ink:#1f2328;--mute:#656d76;--grid:#e6e8eb;--ms:#1B9E77}
+body{font:13px system-ui,sans-serif;color:var(--ink);background:var(--bg);margin:24px}
+h1{font-size:16px;margin:0 0 4px}.sub{color:var(--mute);margin-bottom:12px}
+.legend{display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap}.legend span{display:flex;align-items:center;gap:6px}
+html:not(.ed){overflow-y:scroll}
+html.ed,html.ed body{height:100%;overflow:hidden}html.ed body{box-sizing:border-box;display:flex;flex-direction:column}
+html.ed #cw{flex:1;min-height:0;overflow:auto}html.ed body>*:not(#cw){flex-shrink:0}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+svg{width:100%;height:auto;max-width:1400px}
+g[data-t] text{transition:fill .1s}g[data-t]:hover text{fill:#0969da}g[data-t]:not(.lull):hover rect{filter:brightness(1.12) drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+text{font:12px system-ui,sans-serif;fill:var(--ink)}.m{fill:var(--mute)}
+#tip{position:fixed;pointer-events:none;background:#1f2328;color:#fff;padding:6px 8px;border-radius:4px;font-size:12px;display:none;max-width:320px}
+#tb,#pn{display:none;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px;border:1px solid var(--grid);border-radius:6px;background:#f6f8fa;max-width:1400px}
+#pn label{display:flex;flex-direction:column;font-size:11px;color:var(--mute);gap:2px}
+#pn input[type=text],#pn select,#pn input[type=number]{font:12px system-ui,sans-serif;padding:3px 5px}
+#pn .chk{flex-direction:row;align-items:center;gap:4px}
+button{font:12px system-ui,sans-serif;padding:4px 8px;cursor:pointer}
+#st{color:var(--mute)}#st.dirty{color:#d1242f}
+</style></head><body>
+<h1 id="h"></h1>
+<div id="cw"></div>
+<div id="pn"></div>
+<label id="lb" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:12px 0 0"></label>
+<div style="display:flex;gap:16px;align-items:center;margin:12px 0 0"><span id="ls" style="cursor:pointer;color:var(--mute);white-space:nowrap">Show legend</span><div class="legend" id="lg" style="margin:0;display:none"></div></div>
+<div id="tip"></div>
+<script src="roadmap.js"></script>
+<script>
+document.title=title;document.getElementById("h").textContent=title;
+const col=Object.fromEntries(Object.entries(kinds).map(([k,v])=>[k,v[1]]));
+document.getElementById("lg").innerHTML=Object.values(kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${v[0]}</span>`).join("")
++`<span><i class="sw" style="background:${msColor};transform:rotate(45deg) scale(.8)"></i>Milestone</span>`
++`<span><i class="sw" style="border:1.5px dashed #6B7280;background:rgba(107,114,128,.18)"></i>Dashed = plan not final (TBC)</span>`
++legend.map(t=>`<span>${t}</span>`).join("");
+document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${lullLabel}`;
+const END=quarters[quarters.length-1][2];
+const W=1300,LW=210,TOP=70,RH=28,PAD=12,mw=(W-LW-10)/END;
+const x=m=>LW+m*mw;
+const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const wrap=(t,n=34)=>{const o=[];let c="";t.split(" ").forEach(w=>{if(c&&(c+" "+w).length>n){o.push(c);c=w}else c=c?c+" "+w:w});o.push(c);return o};
+const WK=1;
+const wk=(i,yy)=>{let o="";if(i.s[1]-i.s[0]<=WK+0.01)return o;for(let m=i.s[0]+WK;m<i.s[1]-0.01;m+=WK){o+=`<line x1="${x(m)}" x2="${x(m)}" y1="${yy+4}" y2="${yy+22}" stroke="#fff" stroke-width="1" opacity=".8"/>`}return o};
+const cw=document.getElementById("cw");
+let sel=null; // selected item (while editing)
+let editing=false; // true only after the Edit button is clicked
+
+function render(){
+let y=TOP,rows=[];
+lanes.forEach(l=>{l.items.forEach((i,n)=>i.row=n);l.lines=[];if(l.info&&l.info.length)wrap(l.info.join(", ")).forEach(w=>l.lines.push(w));const nr=Math.max(l.items.length+(editing?1:0),Math.ceil((l.lines.length*15+24)/RH));rows.push({l,y,nr});y+=nr*RH+PAD});
+const H=y+10;
+let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
+months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
+quarters.forEach(q=>{s+=`<rect x="${x(q[1])}" y="62" width="${x(q[2])-x(q[1])}" height="${H-62}" fill="${q[4]}" opacity=".06"/>`});
+s+=`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
+const lullOn=document.getElementById("lt").checked;
+lulls.forEach(u=>{s+=`<g class="lull" style="${lullOn?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#hatch)" opacity=".9"/></g>`});
+quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
+s+=`<line x1="${x(todayWeek)}" x2="${x(todayWeek)}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${x(todayWeek)+3}" y="${H-2}" fill="#d1242f" style="fill:#d1242f">today</text>`;
+rows.forEach(({l,y,nr},li)=>{
+ s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
+ l.lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${t}</text>`});
+ s+=`<line x1="0" x2="${W}" y1="${y+nr*RH+PAD/2}" y2="${y+nr*RH+PAD/2}" stroke="#e6e8eb"/>`;
+ if(editing)s+=`<g class="add" data-l="${li}" style="cursor:pointer"><rect x="${LW+2}" y="${y+l.items.length*RH+6}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="${LW+10}" y="${y+l.items.length*RH+20}" style="fill:#0969da">+ Add item</text></g>`;
+ l.items.forEach((i,ii)=>{
+  const yy=y+(i.row||0)*RH+4,a=x(i.s[0]),b=x(i.s[1]),c=col[i.k];
+  const wl=w=>months[Math.floor(w/4)]+" wk "+(w%4+1),w0=Math.floor(i.s[0]+.001),w1=Math.max(w0,Math.ceil(i.s[1]-.001)-1);
+  const when=w0==w1?wl(w0):wl(w0)+" to "+wl(w1);
+  const data=`data-l="${li}" data-i="${ii}" data-t="${esc(i.t).replace(/"/g,'&quot;')}" data-d="${(when+(i.d?"<br>"+i.d:"")).replace(/"/g,'&quot;')}"`;
+  let label=esc(i.t)+(i.tbc?" (TBC)":"");
+  const ring=(editing&&sel===i)?`<rect x="${a-3}" y="${yy+1}" width="${Math.max(b-a,12)+6}" height="24" rx="6" fill="none" stroke="#0969da" stroke-width="1.5" stroke-dasharray="3 2"/>`:"";
+  if(i.ms){const cx=(i.s[1]-i.s[0]<.4)?a:b-4;
+   const dia=i.tbc?`fill="#fff" stroke="${msColor}" stroke-width="2" stroke-dasharray="3 2"`:`fill="${msColor}" stroke="#fff" stroke-width="2"`;
+   const mbar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
+   s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${Math.max(b-a,0)}" height="18" rx="4" ${mbar} opacity="${b-a<5?0:1}"/>${wk(i,yy)}<path d="M${cx} ${yy+5} l6 8 l-6 8 l-6 -8z" ${dia}/><text x="${cx+11}" y="${yy+18}">${label}</text></g>`;
+  } else {
+   const tw=label.length*6.5,fitR=b+5+tw<=W,fitL=a-5-tw>=LW;
+   const lx=fitR?b+5:fitL?a-5:a+8,la=!fitR&&fitL?'text-anchor="end" ':"",ls2=fitR||fitL?"":'style="fill:#fff"';
+   const bar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
+   s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${b-a}" height="18" rx="4" ${bar}/>${wk(i,yy)}<text x="${lx}" y="${yy+18}" ${la}${ls2}>${label}</text></g>`;
+  }
+ });
+});
+s+="</svg>";
+cw.innerHTML=s;
+}
+render();
+
+const tip=document.getElementById("tip");
+const ls=document.getElementById("ls"),lg=document.getElementById("lg");ls.addEventListener("click",()=>{const o=lg.style.display=="none";lg.style.display=o?"flex":"none";ls.textContent=o?"Hide legend":"Show legend"});
+document.getElementById("lt").addEventListener("change",e=>document.querySelectorAll(".lull").forEach(g=>g.style.display=e.target.checked?"":"none"));
+let dragging=false;
+cw.addEventListener("mousemove",e=>{
+ const g=e.target.closest("g[data-t]");
+ if(!g||dragging){tip.style.display="none";return}
+ tip.style.display="block";tip.style.left=e.clientX+12+"px";tip.style.top=e.clientY+12+"px";tip.innerHTML="<b>"+g.dataset.t+"</b>"+(g.dataset.d?"<br>"+g.dataset.d:"");
+});
+cw.addEventListener("mouseleave",()=>tip.style.display="none");
+
+/* ---------- editing (feature flag: editable in roadmap.js; view mode until Edit is clicked) ---------- */
+if(editable){
+const J=JSON.stringify;
+const pn=document.getElementById("pn");
+let fh=null,dirty=false;
+const eb=document.createElement("button");eb.textContent="Edit";const ub=document.createElement("span");ub.id="st";ub.style.cssText="font:12px system-ui,sans-serif;text-align:right";
+const ta=document.createElement("div");ta.style.cssText="position:fixed;top:12px;right:16px;z-index:10;display:flex;gap:8px;align-items:center";
+ta.innerHTML=`<button id="dc">Discard</button><button id="cp">Export</button><button id="sv" style="background:#0969da;color:#fff;border:1px solid #0969da;border-radius:4px">Save</button>`;
+ta.prepend(ub);ta.append(eb);document.body.append(ta);
+const dcb=ta.querySelector("#dc"),cpb=ta.querySelector("#cp"),svb=ta.querySelector("#sv");
+eb.onclick=()=>{
+ editing=!editing;
+ eb.textContent=editing?"Done":"Edit";
+ document.documentElement.classList.toggle("ed",editing);eb.title=editing?"Drag a bar to move, drag its ends to resize, click to edit":"";upd();
+ sel=null;cw.style.cursor="";render();panel();
+};
+document.getElementById("dc").onclick=()=>{if(!dirty){st.textContent="Nothing to discard";return}if(confirm("Discard unsaved changes?")){dirty=false;location.reload()}};
+const st=ub;
+const upd=()=>{const dd=editing&&dirty;dcb.style.display=dd?"":"none";svb.style.display=dd?"":"none";eb.style.display=dd?"none":"";cpb.style.display=editing?"":"none"};
+const mark=d=>{dirty=d;st.textContent=d?"Unsaved changes":"";st.className=d?"dirty":"";upd()};
+upd();
+window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
+
+const itemStr=i=>`{t:${J(i.t)},k:${J(i.k)},s:[${i.s[0]},${i.s[1]}],d:${J(i.d||"")}${i.ms?",ms:1":""}${i.tbc?",tbc:1":""}}`;
+// everything from "const editable" down is regenerated; the comment header above it is kept as is
+const ser=()=>`const editable=${editable};\nconst title=${J(title)};\nconst kinds=${J(kinds)};\nconst msColor=${J(msColor)};\nconst todayWeek=${todayWeek};\nconst legend=${J(legend)};\nconst lullLabel=${J(lullLabel)};\nconst months=${J(months)};\nconst quarters=${J(quarters)};\n// lulls    : [startWeek, endWeek, label]. Calendar lulls drawn as a hatched band across all lanes.\nconst lulls=${J(lulls)};\nconst lanes=[\n`
+ +lanes.map(l=>` {n:${J(l.n)},${l.info?`info:${J(l.info)},`:""}items:[\n`+l.items.map(i=>"  "+itemStr(i)).join(",\n")+"]}").join(",\n")+"\n];\n";
+
+document.getElementById("cp").onclick=async()=>{await navigator.clipboard.writeText(ser());st.textContent="Copied. Paste over 'const editable' down in roadmap.js";st.className=""};
+document.getElementById("sv").onclick=async()=>{
+ try{
+  if(!window.showOpenFilePicker){st.textContent="Browser can't save to file. Use Copy (or Chrome/Edge)";return}
+  if(!fh)[fh]=await showOpenFilePicker({id:"irm-roadmap",types:[{description:"roadmap.js",accept:{"text/javascript":[".js"]}}]});
+  const old=await (await fh.getFile()).text(),k=old.indexOf("const editable=");
+  if(k<0){st.textContent="That file has no 'const editable' line. Pick roadmap.js";fh=null;return}
+  const w=await fh.createWritable();await w.write(old.slice(0,k)+ser());await w.close();
+  mark(false);st.textContent="Saved";
+ }catch(err){if(err.name!="AbortError")st.textContent="Save failed: "+err.message}
+};
+cw.addEventListener("click",e=>{
+ const g=e.target.closest("g.add");if(!editing||!g)return;
+ const i={t:"New item",k:Object.keys(kinds)[0],s:[1,3],d:""};
+ lanes[g.dataset.l].items.push(i);sel=i;mark(true);render();panel();
+});
+
+function panel(){
+ if(!sel){pn.style.display="none";return}
+ const l=lanes.find(l=>l.items.includes(sel));
+ pn.style.display="flex";
+ pn.innerHTML=`<label>Title<input type="text" id="p_t" size="34"></label>
+ <label>Type<select id="p_k">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v[0]}</option>`).join("")}</select></label>
+ <label>Start wk<input type="number" id="p_a" step="0.5" style="width:60px"></label>
+ <label>End wk<input type="number" id="p_b" step="0.5" style="width:60px"></label>
+ <label>Hover text<input type="text" id="p_d" size="40"></label>
+ <label class="chk"><input type="checkbox" id="p_m">Milestone</label>
+ <label class="chk"><input type="checkbox" id="p_c">TBC</label>
+ <button id="p_u">Up</button><button id="p_dn">Down</button><button id="p_x">Delete</button><button id="p_o">Close</button>`;
+ const $=id=>document.getElementById(id);
+ $("p_t").value=sel.t;$("p_k").value=sel.k;$("p_a").value=sel.s[0];$("p_b").value=sel.s[1];$("p_d").value=sel.d||"";$("p_m").checked=!!sel.ms;$("p_c").checked=!!sel.tbc;
+ const up=f=>{f();mark(true);render()};
+ $("p_t").oninput=e=>up(()=>sel.t=e.target.value);
+ $("p_k").onchange=e=>up(()=>sel.k=e.target.value);
+ $("p_a").onchange=e=>up(()=>sel.s[0]=Math.min(+e.target.value,sel.s[1]));
+ $("p_b").onchange=e=>up(()=>sel.s[1]=Math.max(+e.target.value,sel.s[0]));
+ $("p_d").oninput=e=>up(()=>sel.d=e.target.value);
+ $("p_m").onchange=e=>up(()=>{if(e.target.checked)sel.ms=1;else delete sel.ms});
+ $("p_c").onchange=e=>up(()=>{if(e.target.checked)sel.tbc=1;else delete sel.tbc});
+ const mv=d=>{const n=l.items.indexOf(sel),m=n+d;if(m<0||m>=l.items.length)return;[l.items[n],l.items[m]]=[l.items[m],l.items[n]];mark(true);render()};
+ $("p_u").onclick=()=>mv(-1);$("p_dn").onclick=()=>mv(1);
+ $("p_x").onclick=()=>{l.items.splice(l.items.indexOf(sel),1);sel=null;mark(true);render();panel()};
+ $("p_o").onclick=()=>{sel=null;render();panel()};
+}
+
+// in-place title edit: click an already selected item (a double-click does the same, as its second click)
+function inlineEdit(it,li,ii){
+ const g=cw.querySelector(`g[data-l="${li}"][data-i="${ii}"]`);if(!g)return;
+ const r=g.querySelector("text").getBoundingClientRect(),inp=document.createElement("input");
+ inp.type="text";inp.value=it.t;
+ inp.style.cssText=`position:fixed;z-index:20;left:${r.left-4}px;top:${r.top-4}px;width:${Math.max(r.width+24,200)}px;font:12px system-ui,sans-serif;padding:2px 4px;border:1.5px solid #0969da;border-radius:4px;box-sizing:border-box`;
+ document.body.append(inp);inp.focus();inp.select();
+ let done=false;
+ const fin=ok=>{if(done)return;done=true;const v=inp.value.trim();inp.remove();if(ok&&v&&v!==it.t){it.t=v;mark(true)}render();panel()};
+ inp.onkeydown=e=>{e.stopPropagation();if(e.key=="Enter")fin(true);else if(e.key=="Escape")fin(false)};
+ inp.onblur=()=>fin(true);
+}
+document.addEventListener("keydown",e=>{if(e.key=="Escape"&&editing&&sel&&!dragging){sel=null;render();panel()}});
+
+// drag: move / resize start / resize end, snapping to half a week
+const svgX=e=>{const r=cw.querySelector("svg").getBoundingClientRect();return (e.clientX-r.left)*W/r.width};
+const snap=v=>Math.round(v*2)/2;
+cw.addEventListener("mousemove",e=>{
+ if(dragging||!editing)return;
+ const g=e.target.closest("g[data-i]");cw.style.cursor="";
+ if(!g)return;
+ const it=lanes[g.dataset.l].items[g.dataset.i],m=zone(it,svgX(e));
+ cw.style.cursor=m=="a"||m=="b"?"ew-resize":m=="mv"?"grab":"pointer";
+});
+function zone(it,px){
+ const a=x(it.s[0]),b=x(it.s[1]),w=b-a;
+ if(w<14)return "mv";
+ const ed=Math.min(6,w/3);
+ if(px<a-4||px>b+4)return "sel";
+ return px<=a+ed?"a":px>=b-ed?"b":"mv";
+}
+cw.addEventListener("mousedown",e=>{
+ const g=e.target.closest("g[data-i]");if(!editing||!g||e.button)return;
+ const it=lanes[g.dataset.l].items[g.dataset.i],px0=svgX(e),mode=zone(it,px0),o=[...it.s];
+ e.preventDefault();
+ const was=sel===it,gl=g.dataset.l,gi=g.dataset.i;
+ let moved=false;
+ const mm=ev=>{
+  const dx=ev.clientX-e.clientX;
+  if(!moved&&Math.abs(dx)<3)return;
+  moved=true;dragging=true;tip.style.display="none";
+  if(mode=="sel")return;
+  const dw=snap((svgX(ev)-px0)/mw);
+  if(mode=="mv"){const d=Math.max(-o[0],Math.min(END-o[1],dw));it.s=[o[0]+d,o[1]+d]}
+  else if(mode=="a")it.s=[Math.max(0,Math.min(o[0]+dw,o[1])),o[1]];
+  else it.s=[o[0],Math.min(END,Math.max(o[1]+dw,o[0]))];
+  mark(true);render();
+ };
+ const mu=()=>{
+  document.removeEventListener("mousemove",mm);document.removeEventListener("mouseup",mu);
+  dragging=false;sel=it;render();panel();
+  if(!moved&&was)inlineEdit(it,gl,gi);
+ };
+ document.addEventListener("mousemove",mm);document.addEventListener("mouseup",mu);
+});
+}
+</script></body></html>
