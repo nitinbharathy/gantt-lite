@@ -1,15 +1,23 @@
 # Refactor notes: reusable renderer
 
-Status: not started. Written at commit `c5724a2`. Line numbers below refer to that commit and will drift.
+Status: in progress (steps 1 to 4 below). Written at commit `c5724a2`, revised at `a4b0c55`. Line numbers below refer to `a4b0c55` and will drift.
 
 ## Goal
 
-Pull the drawing code out of `gantt.html` into `renderGantt(data, container)` so the chart can be embedded elsewhere (code-block rendering, a Node SVG export, Mermaid-style use). `gantt.html` and the `roadmap.js` format must keep working unchanged.
+Pull the drawing code in `gantt.html` out into a pure `renderGantt(model, opts)` so the chart can later be embedded elsewhere (code-block rendering, SVG export, Mermaid-style use). `gantt.html` and the `roadmap.js` format must keep working unchanged.
+
+## Decisions
+
+- **Keep the week format.** `s:[startWeek,endWeek]`, 4 weeks to a month, stays. No date syntax for now.
+- **One internal model.** A `normalize(raw) → {model, warnings}` step sits between the file and everything else. It fills defaults, computes `END`, and checks the data. The renderer and the editor read only the model. This is what keeps exact dates cheap later: date support means teaching `normalize` (and Save) to read and write dates, and nothing else.
+- **Weeks are the internal unit.** Inside the model, time is a position in weeks. A date can be converted to that position from `startDate` (the today line already does this).
+- **Single file stays single.** The renderer lives in `gantt.html` in its own `<script id="gantt-render">` block, not a separate file, so `gantt.html` plus `roadmap.js` is still all you copy. Tests and any later export script read that block out of `gantt.html`.
+- **No Node, no dependencies.** Tests run in a browser page (`test/run.html`), headless through Edge or Chrome from a shell script, or by opening the page by hand.
 
 ## Non-goals
 
 - No change to the `roadmap.js` format or to what Save writes.
-- No new chart features during the refactor.
+- No new chart features during the refactor (the "Nov wk 4" editor labels and on-screen warnings come after).
 - No build step or dependencies.
 
 ## What `render()` depends on today
@@ -18,68 +26,77 @@ Globals that the draw code reads directly:
 
 - Data from `roadmap.js`: `title`, `kinds`, `msColor`, `startDate`, `legend`, `lullLabel`, `months`, `quarters`, `lulls`, `lanes`, `editable`.
 - Derived in `gantt.html`: `col` (kind to colour), `END`, `W`, `LW`, `TOP`, `RH`, `PAD`, `mw`, `x()`, `esc()`, `wrap()`, `wk()`.
-- Editor state: `sel`, `editing` (draws the selection ring and the "+ Add item" rows).
+- Editor state: `sel`, `selL`, `editing` (selection rings, "+ Add item" and "+ Add lane" rows).
 - DOM: `document.getElementById("lt")` (lulls checkbox) and `cw.innerHTML = ...` (output).
-- Side effect: `render()` writes `i.row` and `l.lines` onto the data. `restore()` in the undo code strips those two keys when snapshotting, so keep that in step.
+- Clock: `new Date()` for the today line.
+- Side effect: `render()` writes `i.row` and `l.lines` onto the data. `snap0()` in the undo code strips those two keys, so keep that in step.
 
 ## Target shape
 
-1. `renderGantt(data, opts)` returns an SVG string. Pure: no DOM, no globals. `opts` carries `editing`, `selected`, `showLulls`, and an id prefix.
-2. `gantt.html` keeps the editor and calls `cw.innerHTML = renderGantt(...)`.
-3. The renderer lives in its own file (for example `gantt-render.js`) that works as a browser `<script>` and under Node (`module.exports` guarded by `typeof module`). Keep it loadable by a script tag, because `file://` pages cannot `fetch()` or use ES modules reliably.
-4. Defaults for optional fields (`kinds`, `months`, `quarters`, `lulls`, `legend`, `msColor`, `startDate`) so an embedded block can be small.
+1. `normalize(raw)` takes the `roadmap.js` constants and returns the model plus a list of warnings (unknown `k`, `s` out of range or reversed, months not matching quarters, quarters not contiguous). It does not throw on bad data. The model shares the `lanes` and `kinds` objects with the editor (see Risks).
+2. `renderGantt(model, opts)` returns an SVG string. Pure: no DOM, no globals, no clock. `opts` carries `editing`, `selected` (item), `selectedLane`, `showLulls`, `now` (a `Date`), and `idPrefix`.
+3. `gantt.html` keeps the editor, the legend, the tooltip and the checkbox, and calls `cw.innerHTML = renderGantt(model, {..., now: new Date()})`.
+4. Defaults for optional fields (`kinds`, `months`, `quarters`, `lulls`, `legend`, `msColor`, `startDate`) live in `normalize`, so an embedded block can be small.
+5. All text from the data is escaped wherever it goes into HTML or SVG.
 
 ## Risks to watch
 
-- **Shared references.** `lanes` is a `const` that undo restores in place (`lanes.length=0; lanes.push(...)`). Keep one shared reference. Passing a copy to the renderer is fine, but the editor must keep mutating the original.
-- **Element ids.** The pattern id `hatch` is fixed and the lulls checkbox is found by id `lt`. Two charts on one page would collide. Use an id prefix per instance and pass `showLulls` in instead of reading the checkbox.
-- **Mutation inside render.** `i.row` and `l.lines` are set during render. The pure version should compute them locally, or the editor must still see `i.row` where it relies on it (check `mousedown` and the drag code).
-- **Editor globals.** `sel`, `editing`, `dragging`, the undo stacks and the document-level key handlers are single instances. Keep them in `gantt.html`. Do not move them into the renderer.
-- **Tooltip and cursor code** use `cw` and the `data-l`, `data-i`, `data-t`, `data-d` attributes on each `<g>`. Keep those attributes exactly.
+- **Shared references.** `lanes` and `kinds` are mutated in place by the editor and by undo (`lanes.length=0; lanes.push(...)`). The model must hold the same objects, not copies, or edits will not show.
+- **Element ids.** The pattern id `hatch` is fixed. Two charts on one page would collide. Use `idPrefix` (default empty, so the current output is unchanged).
+- **Mutation inside render.** `i.row` and `l.lines` are set during render. Nothing else reads them (check before removing), so the pure version computes them locally.
+- **Editor globals.** `sel`, `editing`, `dragging`, the undo stacks and the document-level key handlers stay in `gantt.html`.
+- **Tooltip and cursor code** use `cw` and the `data-l`, `data-i`, `data-t`, `data-d`, `data-ln` attributes and the `g.add`, `g.addl`, `g.ln`, `g.lull` classes. Keep them exactly.
+- **Tooltip HTML.** `data-d` holds `<br>` on purpose and the tooltip inserts it as HTML. Escape the data text, not the `<br>`.
 - **Save format.** `ser()` writes the file from the `const editable` line down. Leave it alone.
+
+## Known escaping gaps (fix in step 3, as its own commit)
+
+Inserted without escaping at `a4b0c55`: lane names and descriptions, month and quarter labels, phase text, lull labels (`data-t`), item hover text `d` (`data-d` and the tooltip), `legend` entries, `lullLabel`, and the type names and keys in the item panel's Type dropdown.
 
 ## Order of work
 
-1. Add the tests below first, against the current code, and get them passing. They are the safety net.
-2. Extract `renderGantt` as a pure function. Make the tests pass with no change to the golden output.
-3. Switch `gantt.html` to call it. Do the manual checklist.
-4. Only then add the code-block loader or the Node SVG script.
+1. **Safety net.** Add the test page and capture golden SVGs from the current code, with a fixed clock. Commit.
+2. **Extract.** Move the draw code into `renderGantt` in the `gantt-render` block, with `normalize`. Golden output identical. Commit.
+3. **Switch and harden.** `gantt.html` calls the new functions. Then, as separate commits: `idPrefix` and the two-instance test; escaping fixes with their tests; the remaining tests below.
+4. **Check.** All automated tests pass, then the manual checklist in a browser.
+5. Later: "Nov wk 4" labels in the editor, warnings shown on screen, embedding, export.
 
-Commit each step separately so any one can be reverted.
+Commit each step (and each sub-step in 3) separately so any one can be reverted.
 
 ## Tests
 
-No test framework is needed. Use Node's built-in runner (`node --test`), no dependencies.
+`test/run.html` loads `roadmap.js`-style data and the `gantt-render` block, runs the checks and writes a pass or fail summary into the page. `test/run.sh` runs it headless and prints the result.
 
 ### Automated
 
-1. **Golden output.** Before changing anything, capture the SVG string for `roadmap.js` in view mode and save it as `test/golden/view.svg`. After the refactor, the renderer must produce the identical string. Repeat with `editing: true` and one item selected (`golden/edit.svg`), and with lulls hidden.
-   - To capture today's output, load `roadmap.js` and the draw code in a Node `vm` context with a stub `document`, or extract the draw code first and then capture. Do the capture before editing the draw code.
+1. **Golden output.** Captured from the current code before any change, with the clock fixed at 2027-11-10. Cases: view mode; `editing` with one item selected; lulls hidden; today outside the chart. After the refactor the renderer must produce identical strings. Goldens are stored as `.js` files so the test page can load them with a script tag.
 2. **Structure checks** on the SVG for the sample data:
-   - one `<g data-l data-i>` per item, so the count equals the total number of items;
-   - the number of lane label texts equals the number of lanes;
-   - lulls present when shown and absent when hidden;
+   - one `<g data-l data-i>` per item;
+   - one lane name text per lane;
+   - lulls visible when shown and hidden when not;
    - milestone items contain a diamond `<path>`; TBC items contain `stroke-dasharray`.
-3. **Edge cases** (small hand-built data objects):
+3. **Edge cases** (small hand-built data):
    - empty `lanes`, and a lane with no items;
-   - an item with `s` of zero width, and with `s[1]` at `END`;
+   - an item with zero width, and with `s[1]` at `END`;
    - a bar under half a week wide with `ms:1` shows only the diamond;
    - label placement: right of the bar, then left, then inside in white;
-   - titles with `<`, `&` and `"` are escaped in both text and `data-*` attributes;
-   - unknown `k` (kind not in `kinds`) does not throw.
-4. **Round trip.** `ser()` output evaluated back gives the same `lanes` as the input (guards the Save format).
-5. **Undo model.** If the undo logic is extracted into a plain function, test that: commit then undo then redo restores state, the redo stack clears on a new commit, the cap drops the oldest entry, and undoing back to the saved snapshot clears the dirty flag.
-6. **Two instances.** Render two charts into one string and check there are no duplicate ids.
+   - `<`, `&` and `"` in titles, lane names, hover text, months, legend and lull labels are escaped in text and in `data-*` attributes;
+   - unknown `k` does not throw, and `normalize` warns about it.
+4. **normalize warnings** for each check in Target shape 1, and none for the sample files.
+5. **Round trip.** `ser()` output evaluated back gives the same data as the input (guards the Save format).
+6. **Two instances.** Two charts with different `idPrefix` values have no duplicate ids.
 
 ### Manual checklist (browser, `gantt.html`)
 
 Run once in Chrome or Edge after step 3.
 
 - Page title comes from `roadmap.js`; legend, lull checkbox and Show/Hide legend work.
+- The today line and its date label show (or are hidden when today is outside the chart).
 - Hover tips show the title, week range and hover text.
 - Edit button: bars drag sideways, ends resize, up/down drag reorders and locks to one axis.
 - Click selects, second click renames in place, click on empty chart area deselects, Esc deselects.
 - Panel: every field updates the bar; lane dropdown moves the item; Up/Down/Delete/Close work.
+- Lane panel and Types panel: rename, recolour, add, delete, move.
 - Delete and Backspace delete the selected item, but not while typing in a field.
 - Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y work; a drag is one undo step; undoing back to the saved state clears "Unsaved changes".
 - Save writes `roadmap.js` and it reloads identically; Export and Discard work.
