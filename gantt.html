@@ -65,8 +65,8 @@ function renderGantt(model,opts){
  quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
  months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
  quarters.forEach(q=>{s+=`<rect x="${x(q[1])}" y="62" width="${x(q[2])-x(q[1])}" height="${H-62}" fill="${q[4]}" opacity=".06"/>`});
- s+=`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
- lulls.forEach(u=>{s+=`<g class="lull" style="${showLulls?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#hatch)" opacity=".9"/></g>`});
+ s+=`<defs><pattern id="${p}hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
+ lulls.forEach(u=>{s+=`<g class="lull" style="${showLulls?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#${p}hatch)" opacity=".9"/></g>`});
  quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
  if(now&&startDate){
   const sd=startDate.split("-").map(Number);

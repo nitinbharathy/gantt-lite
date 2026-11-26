@@ -34,6 +34,14 @@ for (const k in DIRECT)
     eq(JSON.stringify(model), before); // renderGantt must not touch the data
   });
 
+test("idPrefix: two charts have no duplicate ids", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(await loadSample());
+  const a = renderGantt(model, {idPrefix: "a-"}), b = renderGantt(model, {idPrefix: "b-"});
+  const ids = (a + b).match(/\bid="[^"]*"/g) || [];
+  eq(String(new Set(ids).size), String(ids.length));
+  eq(String(ids.length > 0 && a.includes('url(#a-hatch)') && b.includes('url(#b-hatch)')), "true");
+});
+
 // --- runner ---
 (async () => {
   let pass = 0, fails = [];
