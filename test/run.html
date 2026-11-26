@@ -42,6 +42,48 @@ test("idPrefix: two charts have no duplicate ids", async () => {
   eq(String(ids.length > 0 && a.includes('url(#a-hatch)') && b.includes('url(#b-hatch)')), "true");
 });
 
+// escaping: strings with markup, entities and quotes must show up as text, and the SVG must stay well-formed
+const NASTY = ['<b>bold</b>', '&amp; x', 'say "hi"', "it's <i>"];
+const nastyRaw = () => ({
+  title: NASTY[0],
+  kinds: {a: ["Kind", "#336699"]},
+  months: ['<b>M1</b>', 'M2 &amp;', 'M"3"'],
+  quarters: [['<b>Q1</b>', 0, 12, 'ph "<i>"', "#2F6FDE"]],
+  lulls: [[1, 2, 'lull <b>"&amp;']],
+  lanes: [{n: '<b>Lane</b> &amp; "x"', info: ['info <b>one</b> &amp; "two" it\'s'], items: [
+    {t: '<b>Item</b> &amp; "q" it\'s', k: "a", s: [1, 5], d: 'hover <b>tip</b> &amp; "x" it\'s'}]}],
+});
+const html = (s) => { const d = document.createElement("div"); d.innerHTML = s; return d; };
+test("escaping: SVG has no raw tags from data and parses as XML", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(nastyRaw());
+  const svg = renderGantt(model, {now: NOW, editing: true});
+  if (svg.includes("<b>") || svg.includes("<i>")) throw new Error("raw tag in SVG");
+  // data-d keeps a literal <br> on purpose (the tooltip inserts it as HTML), which XML forbids inside an attribute; swap it for the check
+  const doc = new DOMParser().parseFromString(svg.replace(/<br>/g, "&lt;br&gt;"), "image/svg+xml");
+  if (doc.querySelector("parsererror")) throw new Error("not well-formed: " + doc.querySelector("parsererror").textContent.slice(0, 200));
+  const text = doc.documentElement.textContent;
+  for (const want of ['<b>Item</b> &amp; "q" it\'s', '<b>Lane</b> &amp; "x"', 'info <b>one</b> &amp; "two" it\'s', '<b>M1</b>', 'M2 &amp;', 'M"3"', '<b>Q1</b>', 'ph "<i>"'])
+    if (!text.includes(want)) throw new Error("text missing: " + want);
+});
+test("escaping: HTML parser sees text only, and the tooltip text is the original", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(nastyRaw());
+  const d = html(renderGantt(model, {now: NOW}));
+  if (d.querySelector("b,i")) throw new Error("data produced a real <b> or <i> element in the chart");
+  const g = d.querySelector("g[data-i]"), l = d.querySelector("g.lull");
+  // same expression as the tooltip code in gantt.html
+  const tipHtml = (g) => "<b>" + g.dataset.t + "</b>" + (g.dataset.d ? "<br>" + g.dataset.d : "");
+  const t = html(tipHtml(g));
+  eq([...t.querySelectorAll("*")].map(e => e.tagName).join(), "B,BR,BR"); // title, then one <br> before the week range and one before the hover text
+  for (const want of ['<b>Item</b> &amp; "q" it\'s', 'hover <b>tip</b> &amp; "x" it\'s'])
+    if (!t.textContent.includes(want)) throw new Error("tooltip text missing: " + want);
+  eq(html(tipHtml(l)).textContent, 'lull <b>"&amp;');
+});
+test("escaping: legend, lull label and Type options are escaped by gantt.html", async () => {
+  const src = await textOf(GANTT_URL);
+  for (const want of ["esc(t)}</span>`)", "esc(model.lullLabel)", "esc(v[0])}</option>"])
+    if (!src.includes(want)) throw new Error("gantt.html does not escape: " + want);
+});
+
 // --- runner ---
 (async () => {
   let pass = 0, fails = [];

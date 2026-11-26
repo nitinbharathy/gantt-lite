@@ -34,6 +34,7 @@ button{font:12px system-ui,sans-serif;padding:4px 8px;cursor:pointer}
 const {normalize,renderGantt,ganttLayout}=(()=>{
 const W=1300,LW=210,TOP=70,RH=28,PAD=12,WK=1;
 const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const ea=t=>esc(t).replace(/"/g,"&quot;"); // attribute-escape a value; used on esc()ed text, since the tooltip reads the decoded value back as HTML
 const wrap=(t,n=34)=>{const o=[];let c="";t.split(" ").forEach(w=>{if(c&&(c+" "+w).length>n){o.push(c);c=w}else c=c?c+" "+w:w});o.push(c);return o};
 // raw: lanes (required); title, kinds, msColor, startDate, legend, lullLabel, months, quarters, lulls (optional, defaults filled in)
 function normalize(raw){
@@ -62,11 +63,11 @@ function renderGantt(model,opts){
  lanes.forEach(l=>{const lines=l.info&&l.info.length?wrap(l.info.join(", ")):[];const nr=Math.max(l.items.length+(editing?1:0),Math.ceil((lines.length*15+24)/RH));rows.push({l,lines,y,nr});y+=nr*RH+PAD});
  const H=y+10+(editing?32:0);
  let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
- quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
- months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
+ quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${esc(q[0])}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${esc(q[3])}</text>`});
+ months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${esc(m)}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
  quarters.forEach(q=>{s+=`<rect x="${x(q[1])}" y="62" width="${x(q[2])-x(q[1])}" height="${H-62}" fill="${q[4]}" opacity=".06"/>`});
  s+=`<defs><pattern id="${p}hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
- lulls.forEach(u=>{s+=`<g class="lull" style="${showLulls?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#${p}hatch)" opacity=".9"/></g>`});
+ lulls.forEach(u=>{s+=`<g class="lull" style="${showLulls?"":"display:none"}" data-t="${ea(esc(u[2]))}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#${p}hatch)" opacity=".9"/></g>`});
  quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
  if(now&&startDate){
   const sd=startDate.split("-").map(Number);
@@ -75,8 +76,8 @@ function renderGantt(model,opts){
  }
  rows.forEach(({l,lines,y,nr},li)=>{
   if(editing){const on=selL===l;s+=`<g class="ln" data-ln="${li}" style="cursor:pointer"><rect x="0" y="${y}" width="${LW-8}" height="${nr*RH}" rx="4" fill="${on?"#0969da":"#fff"}" fill-opacity="${on?.08:0}" ${on?'stroke="#0969da" stroke-dasharray="3 2"':""}/>`}
-  s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
-  lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${t}</text>`});
+  s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${esc(l.n)}</text>`;
+  lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${esc(t)}</text>`});
   if(editing)s+="</g>";
   s+=`<line x1="0" x2="${W}" y1="${y+nr*RH+PAD/2}" y2="${y+nr*RH+PAD/2}" stroke="#e6e8eb"/>`;
   if(editing)s+=`<g class="add" data-l="${li}" style="cursor:pointer"><rect x="${LW+2}" y="${y+l.items.length*RH+6}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="${LW+10}" y="${y+l.items.length*RH+20}" style="fill:#0969da">+ Add item</text></g>`;
@@ -84,7 +85,7 @@ function renderGantt(model,opts){
    const yy=y+ii*RH+4,a=x(i.s[0]),b=x(i.s[1]),c=kinds[i.k]?kinds[i.k][1]:"#808080";
    const wl=w=>months[Math.floor(w/4)]+" wk "+(w%4+1),w0=Math.floor(i.s[0]+.001),w1=Math.max(w0,Math.ceil(i.s[1]-.001)-1);
    const when=w0==w1?wl(w0):wl(w0)+" to "+wl(w1);
-   const data=`data-l="${li}" data-i="${ii}" data-t="${esc(i.t).replace(/"/g,'&quot;')}" data-d="${(when+(i.d?"<br>"+i.d:"")).replace(/"/g,'&quot;')}"`;
+   const data=`data-l="${li}" data-i="${ii}" data-t="${ea(esc(i.t))}" data-d="${ea(esc(when))+(i.d?"<br>"+ea(esc(i.d)):"")}"`; // the tooltip inserts these values as HTML, so they hold escaped text (the <br> is the one real tag)
    let label=esc(i.t)+(i.tbc?" (TBC)":"");
    const ring=(editing&&sel===i)?`<rect x="${a-3}" y="${yy+1}" width="${Math.max(b-a,12)+6}" height="24" rx="6" fill="none" stroke="#0969da" stroke-width="1.5" stroke-dasharray="3 2"/>`:"";
    if(i.ms){const cx=(i.s[1]-i.s[0]<.4)?a:b-4;
@@ -115,9 +116,9 @@ function refreshKinds(){ // rebuild the legend from `kinds` (also called by the 
 document.getElementById("lg").innerHTML=Object.values(model.kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${esc(v[0])}</span>`).join("")
 +`<span><i class="sw" style="background:${model.msColor};transform:rotate(45deg) scale(.8)"></i>Milestone</span>`
 +`<span><i class="sw" style="border:1.5px dashed #6B7280;background:rgba(107,114,128,.18)"></i>Dashed = plan not final (TBC)</span>`
-+model.legend.map(t=>`<span>${t}</span>`).join("");
++model.legend.map(t=>`<span>${esc(t)}</span>`).join("");
 }
-document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${model.lullLabel}`;
+document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${esc(model.lullLabel)}`;
 refreshKinds();
 const cw=document.getElementById("cw");
 let typesOpen=false; // types editor panel open (while editing)
@@ -282,7 +283,7 @@ function panel(){
  const l=lanes.find(l=>l.items.includes(sel));
  pn.style.display="flex";
  pn.innerHTML=`<label>Title<input type="text" id="p_t" size="34"></label>
- <label>Type<select id="p_k">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v[0]}</option>`).join("")}</select></label>
+ <label>Type<select id="p_k">${Object.entries(kinds).map(([k,v])=>`<option value="${esc(k).replace(/"/g,"&quot;")}">${esc(v[0])}</option>`).join("")}</select></label>
  <label>Lane<select id="p_l">${lanes.map((x,n)=>`<option value="${n}">${esc(x.n)}</option>`).join("")}</select></label>
  <label>Start wk<input type="number" id="p_a" step="0.5" style="width:60px"></label>
  <label>End wk<input type="number" id="p_b" step="0.5" style="width:60px"></label>
