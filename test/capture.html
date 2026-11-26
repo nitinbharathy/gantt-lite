@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><body>
+<script src="harness.js"></script>
+<script>
+captureAll().then(g => emit("window.GOLDEN=" + JSON.stringify(g) + ";\n"),
+                  e => emit("ERROR " + e));
+</script>

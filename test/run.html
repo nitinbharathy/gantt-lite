@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><body>
+<script src="harness.js"></script>
+<script src="golden/goldens.js"></script>
+<script>
+// --- tiny test framework: test(name, async fn), eq(actual, expected) ---
+const tests = [];
+const test = (name, fn) => tests.push({name, fn});
+function eq(a, b) {
+  if (a === b) return;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  const cut = s => JSON.stringify(s.slice(Math.max(0, i - 80), i + 80));
+  throw new Error(`differs at index ${i} (lengths ${a.length} vs ${b.length})\n  actual:   ${cut(a)}\n  expected: ${cut(b)}`);
+}
+
+// --- tests ---
+for (const k in CASES)
+  test("legacy golden: " + k, async () => eq(await legacyCapture(CASES[k]), GOLDEN[k]));
+
+// --- runner ---
+(async () => {
+  let pass = 0, fails = [];
+  for (const t of tests) {
+    try { await t.fn(); pass++; } catch (e) { fails.push(`FAIL ${t.name}\n  ${e.message}`); }
+  }
+  const head = fails.length ? `FAIL ${fails.length}/${tests.length}` : `PASS ${pass}/${tests.length}`;
+  emit([head, ...fails].join("\n") + "\n");
+})();
+</script>
