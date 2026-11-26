@@ -21,7 +21,7 @@ Browser tests, no Node. They run in headless Edge.
 - **normalize**: warnings for unknown type, reversed or out-of-range weeks, months not matching quarters, non-contiguous quarters; none for `roadmap-sample.js` and `roadmap.js`; `lanes` and `kinds` shared with the input; defaults for a minimal input.
 - **Save round trip**: `ser()` output from the page, evaluated back, equals `roadmap-sample.js` as JSON.
 
-Not covered: the editor (drag, panels, undo) and the tooltip and legend toggles. See the manual checklist in `REFACTOR.md`.
+**Editor smoke test** (`sh test/smoke.sh`, same output contract): loads the real `gantt.html` in an iframe with `roadmap-sample.js` as data and drives the editor with synthetic DOM events (view toggles, hover tip, select, drag move/resize/reorder, undo/redo, panel fields, delete keys, lanes, types, inline rename, Export into a stubbed clipboard). Any `window.onerror` or `console.error` in the page fails the test. Save and Discard are never clicked. Not covered: real mouse or keyboard input, the Save file picker, Discard, and the today line.
 
 ## Goldens
 

@@ -1,0 +1,237 @@
+<!doctype html><meta charset="utf-8"><body>
+<script src="harness.js"></script>
+<script>
+// Smoke test of the real gantt.html: loaded in an iframe (srcdoc) with roadmap-sample.js as data,
+// driven by synthetic DOM events. Never clicks Save or Discard.
+const tests = [];
+const test = (name, fn) => tests.push({name, fn});
+const ok = (cond, msg) => { if (!cond) throw new Error(msg); };
+const same = (a, b, msg) => ok(JSON.stringify(a) === JSON.stringify(b), `${msg}: got ${JSON.stringify(a)}, want ${JSON.stringify(b)}`);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Runs first in the frame: collects errors, stubs the clipboard, confirm and alert.
+const HOOK = `<script>
+window.__errs = []; window.__clip = [];
+window.onerror = (m, s, l) => { window.__errs.push("onerror: " + m + " (line " + l + ")"); };
+addEventListener("unhandledrejection", e => window.__errs.push("unhandledrejection: " + (e.reason && e.reason.message || e.reason)));
+const ce = console.error; console.error = (...a) => { window.__errs.push("console.error: " + a.join(" ")); ce.apply(console, a); };
+Object.defineProperty(navigator, "clipboard", {configurable: true, value: {writeText: async t => { window.__clip.push(t); }}});
+window.confirm = () => true; window.alert = () => {};
+<\/script>`;
+
+let pageText = null;
+async function openFrame() { // fresh frame: gantt.html with roadmap-sample.js instead of roadmap.js
+  pageText ??= await textOf(GANTT_URL);
+  const tag = '<script src="roadmap.js"><\/script>';
+  if (!pageText.includes(tag)) throw new Error("roadmap.js script tag not found in gantt.html");
+  const html = pageText.replace("<head>", "<head>" + HOOK).replace(tag, `<script src="${DATA_URL}"><\/script>`);
+  const f = document.createElement("iframe");
+  f.style.cssText = "width:1400px;height:900px;border:0";
+  f.srcdoc = html;
+  const loaded = new Promise(r => f.onload = r);
+  document.body.append(f);
+  await loaded;
+  const w = f.contentWindow, d = f.contentDocument;
+  const A = {f, w, d,
+    $: (s) => d.querySelector(s), $$: (s) => [...d.querySelectorAll(s)],
+    js: (code) => JSON.parse(w.eval("JSON.stringify(" + code + ")")), // read page state, e.g. "lanes[0].items[0].s"
+    mouse(type, target, x, y, extra) { target.dispatchEvent(new w.MouseEvent(type, {bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, ...extra})); },
+    key(target, key, extra) { target.dispatchEvent(new w.KeyboardEvent("keydown", {bubbles: true, cancelable: true, key, ...extra})); },
+    input(el, v) { el.value = v; el.dispatchEvent(new w.Event("input", {bubbles: true})); },
+    change(el) { el.dispatchEvent(new w.Event("change", {bubbles: true})); },
+    btn: (text) => A.$$("button").find(b => b.textContent === text),
+    bar: (li, ii) => A.$(`g[data-l="${li}"][data-i="${ii}"] rect[height="18"]`),
+    centre(el) { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; },
+    scale() { return A.$("svg").getBoundingClientRect().width / 1300; }, // client px per SVG unit
+    title: (li, ii) => A.js(`lanes[${li}].items[${ii}].t`),
+    click(el) { const [x, y] = A.centre(el); A.mouse("mousedown", el, x, y); A.mouse("mouseup", A.d, x, y); },
+    drag(li, ii, dxPx, dyPx, fromX) { // mousedown on the bar (at fromX or its centre), move and release on document
+      const el = A.bar(li, ii); let [x, y] = A.centre(el); if (fromX !== undefined) x = fromX;
+      A.mouse("mousedown", el, x, y);
+      A.mouse("mousemove", A.d, x + dxPx, y + dyPx);
+      A.mouse("mouseup", A.d, x + dxPx, y + dyPx);
+    },
+    edit() { A.btn("Edit").click(); },
+  };
+  A.mw = (1300 - 210 - 10) / A.js("END"); // SVG units per week
+  return A;
+}
+function smoke(name, fn) {
+  test(name, async () => {
+    const A = await openFrame();
+    try {
+      await fn(A);
+      await sleep(0);
+      const errs = A.w.__errs; ok(errs.length === 0, "page errors: " + errs.join("; "));
+    } finally { A.f.remove(); }
+  });
+}
+const shown = (el) => el && el.style.display !== "none" && el.style.display !== "";
+
+smoke("1 view mode: svg, legend toggle, lull checkbox", async A => {
+  ok(A.$("#cw svg"), "no svg");
+  ok(!shown(A.$("#lg")), "legend should start hidden");
+  A.$("#ls").click();
+  ok(shown(A.$("#lg")) && A.$("#ls").textContent === "Hide legend", "legend not shown after click");
+  A.$("#ls").click();
+  ok(!shown(A.$("#lg")) && A.$("#ls").textContent === "Show legend", "legend not hidden after second click");
+  const lulls = A.$$(".lull"); ok(lulls.length > 0, "no lull groups");
+  ok(lulls.every(g => g.style.display !== "none"), "lulls should start visible");
+  A.$("#lt").checked = false; A.change(A.$("#lt"));
+  ok(A.$$(".lull").every(g => g.style.display === "none"), "lulls not hidden");
+});
+
+smoke("2 hover tip shows title and weeks", async A => {
+  const [x, y] = A.centre(A.bar(0, 0));
+  ok(!shown(A.$("#tip")), "tip visible before hover");
+  A.mouse("mousemove", A.bar(0, 0), x, y);
+  ok(shown(A.$("#tip")), "tip not shown");
+  same(A.$("#tip b").textContent, "Build", "tip title");
+  ok(A.$("#tip").textContent.includes("Aug wk 2 to Sep wk 3"), "tip week text: " + A.$("#tip").textContent);
+});
+
+smoke("3 Edit button toggles editing", async A => {
+  ok(!A.$("#cw").textContent.includes("+ Add item"), "Add item present in view mode");
+  A.edit();
+  ok(A.btn("Done") && !A.btn("Edit"), "button should read Done");
+  ok(A.$("#cw").textContent.includes("+ Add item"), "no + Add item");
+  A.btn("Done").click();
+  ok(A.btn("Edit") && !A.$("#cw").textContent.includes("+ Add item"), "did not toggle back");
+});
+
+smoke("4 click selects, Esc and empty click deselect", async A => {
+  A.edit();
+  A.click(A.bar(0, 1));
+  ok(A.$("#pn").style.display === "flex", "panel not visible");
+  same(A.$("#p_t").value, "Internal trial", "panel title");
+  A.key(A.d.body, "Escape");
+  ok(A.$("#pn").style.display === "none", "Esc did not deselect");
+  A.click(A.bar(0, 1)); ok(A.$("#pn").style.display === "flex", "reselect failed");
+  A.mouse("click", A.$("svg"), 5, 5);
+  ok(A.$("#pn").style.display === "none", "empty click did not deselect");
+});
+
+smoke("5 drag moves, snaps, one undo step, redo, dirty status", async A => {
+  A.edit();
+  same(A.js("lanes[0].items[0].s"), [1, 7], "start");
+  ok(A.$("#st").textContent === "", "dirty before change");
+  A.drag(0, 0, 3.3 * A.mw * A.scale(), 0);
+  same(A.js("lanes[0].items[0].s"), [4.5, 10.5], "moved by 3.5 weeks, width kept");
+  ok(A.$("#st").textContent === "Unsaved changes", "no Unsaved changes after drag");
+  A.key(A.d.body, "z", {ctrlKey: true});
+  same(A.js("lanes[0].items[0].s"), [1, 7], "one Ctrl+Z restores");
+  ok(A.$("#st").textContent === "", "status not cleared after undo");
+  A.key(A.d.body, "z", {ctrlKey: true, shiftKey: true});
+  same(A.js("lanes[0].items[0].s"), [4.5, 10.5], "Ctrl+Shift+Z redo");
+  A.key(A.d.body, "z", {ctrlKey: true});
+  same(A.js("lanes[0].items[0].s"), [1, 7], "undo again");
+  A.key(A.d.body, "y", {ctrlKey: true});
+  same(A.js("lanes[0].items[0].s"), [4.5, 10.5], "Ctrl+Y redo");
+});
+
+smoke("6 drag right end resizes", async A => {
+  A.edit();
+  const r = A.bar(0, 0).getBoundingClientRect();
+  A.drag(0, 0, 2 * A.mw * A.scale(), 0, r.right - 2 * A.scale());
+  same(A.js("lanes[0].items[0].s"), [1, 9], "end moved 2 weeks, start fixed");
+});
+
+smoke("7 vertical drag reorders within lane", async A => {
+  A.edit();
+  const before = A.js("lanes[0].items.map(i=>i.t)"), s = A.js("lanes[0].items[1].s");
+  A.drag(0, 1, 0, 2 * 28 * A.scale());
+  const after = A.js("lanes[0].items.map(i=>i.t)");
+  same(after[3], "Internal trial", "item moved down two rows");
+  same(after.length, before.length, "item count");
+  same(A.js("lanes[0].items[3].s"), s, "s unchanged");
+  same(A.js("lanes[1].items.length"), 4, "other lane untouched");
+});
+
+smoke("8 panel fields update the chart", async A => {
+  A.edit(); A.click(A.bar(1, 0)); // Scoping, dev, lane Product B
+  const g = () => A.$('g[data-l="1"][data-i="0"]');
+  A.input(A.$("#p_t"), "Renamed");
+  ok(A.$("#cw").textContent.includes("Renamed"), "title not in chart");
+  same(A.bar(1, 0).getAttribute("fill"), "#6B7280", "dev fill");
+  A.$("#p_k").value = "uat"; A.change(A.$("#p_k"));
+  same(A.bar(1, 0).getAttribute("fill"), "#C13584", "type changes fill");
+  ok(!g().querySelector("path"), "diamond before milestone");
+  A.$("#p_m").checked = true; A.change(A.$("#p_m"));
+  ok(g().querySelector("path"), "no diamond after Milestone");
+  A.$("#p_c").checked = true; A.change(A.$("#p_c"));
+  same(g().querySelector("text").textContent, "Renamed (TBC)", "TBC label");
+  A.$("#p_l").value = "2"; A.change(A.$("#p_l"));
+  same(A.js("lanes[2].items.at(-1).t"), "Renamed", "moved to end of other lane");
+  same(A.js("lanes[1].items.length"), 3, "removed from old lane");
+});
+
+smoke("9 Delete removes selected, Backspace in a field does not", async A => {
+  A.edit(); A.click(A.bar(1, 0));
+  const n = A.js("lanes[1].items.length");
+  A.$("#p_t").focus(); A.key(A.$("#p_t"), "Backspace");
+  same(A.js("lanes[1].items.length"), n, "Backspace in input deleted the item");
+  A.$("#p_t").blur();
+  A.key(A.d.body, "Delete");
+  same(A.js("lanes[1].items.length"), n - 1, "Delete did not remove");
+  ok(A.$("#pn").style.display === "none", "panel still open");
+});
+
+smoke("10 lanes: select, rename, add, delete, undo", async A => {
+  const click = (el) => el.dispatchEvent(new A.w.MouseEvent("click", {bubbles: true}));
+  A.edit();
+  click(A.$$("g.ln")[1]);
+  ok(A.$("#p_ln") && A.$("#p_ln").value === "Product B", "lane panel not shown");
+  A.input(A.$("#p_ln"), "Renamed lane");
+  ok(A.$$("text.lane").some(t => t.textContent === "Renamed lane"), "chart lane name not updated");
+  const n = A.js("lanes.length");
+  click(A.$("g.addl"));
+  same(A.js("lanes.length"), n + 1, "Add lane");
+  ok(A.$$("text.lane").some(t => t.textContent === "New lane"), "new lane not drawn");
+  click(A.$$("g.ln")[1]);
+  A.$("#p_lx").click();
+  same(A.js("lanes.length"), n, "lane not deleted");
+  A.key(A.d.body, "z", {ctrlKey: true});
+  same(A.js("lanes.length"), n + 1, "undo did not restore lane");
+  same(A.js("lanes[1].n"), "Renamed lane", "restored lane name");
+  same(A.js("lanes[1].items.length"), 4, "restored lane items");
+});
+
+smoke("11 types: add, relabel, legend follows", async A => {
+  A.edit(); A.btn("Types").click();
+  const rows = () => A.$$("#pn [data-k]").length, n = rows();
+  ok(n > 0, "no type rows");
+  A.$("#ty_a").click();
+  same(rows(), n + 1, "row added");
+  ok(A.$("#lg").textContent.includes("New type"), "legend lacks new type");
+  A.input(A.$$("#pn .ty_l")[0], "Dev renamed");
+  ok(A.$("#lg").textContent.includes("Dev renamed"), "legend not relabelled");
+  ok(!A.$("#lg").textContent.includes("Development"), "old label still in legend");
+});
+
+smoke("12 second click opens inline title edit, Enter commits", async A => {
+  A.edit(); A.click(A.bar(0, 1));
+  ok(!A.$("body > input[type=text]"), "inline input before second click");
+  A.click(A.bar(0, 1));
+  const inp = A.$("body > input[type=text]");
+  ok(inp, "no inline input after second click");
+  inp.value = "Inline title"; A.key(inp, "Enter");
+  same(A.title(0, 1), "Inline title", "title not committed");
+  ok(!A.$("body > input[type=text]"), "input still present");
+  ok(A.$("#cw").textContent.includes("Inline title"), "chart not updated");
+});
+
+smoke("13 Export copies data to the clipboard", async A => {
+  A.edit(); A.$("#cp").click();
+  await sleep(50);
+  ok(A.w.__clip.length === 1, "writeText not called once");
+  ok(A.w.__clip[0].startsWith("const editable=true;"), "export text: " + A.w.__clip[0].slice(0, 40));
+});
+
+(async () => {
+  let pass = 0, fails = [];
+  for (const t of tests) {
+    try { await t.fn(); pass++; } catch (e) { fails.push(`FAIL ${t.name}\n  ${e.message}`); }
+  }
+  emit([fails.length ? `FAIL ${fails.length}/${tests.length}` : `PASS ${pass}/${tests.length}`, ...fails].join("\n") + "\n");
+})();
+</script>
