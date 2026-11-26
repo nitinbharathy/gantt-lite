@@ -140,9 +140,15 @@ cw.addEventListener("mousemove",e=>{
 });
 cw.addEventListener("mouseleave",()=>tip.style.display="none");
 
+// Save format (top level so the tests can call ser())
+const J=JSON.stringify;
+const itemStr=i=>`{t:${J(i.t)},k:${J(i.k)},s:[${i.s[0]},${i.s[1]}],d:${J(i.d||"")}${i.ms?",ms:1":""}${i.tbc?",tbc:1":""}}`;
+// everything from "const editable" down is regenerated; the comment header above it is kept as is
+const ser=()=>`const editable=${editable};\nconst title=${J(title)};\nconst kinds=${J(kinds)};\nconst msColor=${J(msColor)};\nconst startDate=${J(startDate)};\nconst legend=${J(legend)};\nconst lullLabel=${J(lullLabel)};\nconst months=${J(months)};\nconst quarters=${J(quarters)};\n// lulls    : [startWeek, endWeek, label]. Calendar lulls drawn as a hatched band across all lanes.\nconst lulls=${J(lulls)};\nconst lanes=[\n`
+ +lanes.map(l=>` {n:${J(l.n)},${l.info?`info:${J(l.info)},`:""}items:[\n`+l.items.map(i=>"  "+itemStr(i)).join(",\n")+"]}").join(",\n")+"\n];\n";
+
 /* ---------- editing (feature flag: editable in roadmap.js; view mode until Edit is clicked) ---------- */
 if(editable){
-const J=JSON.stringify;
 const pn=document.getElementById("pn");
 let fh=null,dirty=false;
 const eb=document.createElement("button");eb.textContent="Edit";const ub=document.createElement("span");ub.id="st";ub.style.cssText="font:12px system-ui,sans-serif;text-align:right";
@@ -196,11 +202,6 @@ document.addEventListener("keydown",e=>{
 });
 upd();
 window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
-
-const itemStr=i=>`{t:${J(i.t)},k:${J(i.k)},s:[${i.s[0]},${i.s[1]}],d:${J(i.d||"")}${i.ms?",ms:1":""}${i.tbc?",tbc:1":""}}`;
-// everything from "const editable" down is regenerated; the comment header above it is kept as is
-const ser=()=>`const editable=${editable};\nconst title=${J(title)};\nconst kinds=${J(kinds)};\nconst msColor=${J(msColor)};\nconst startDate=${J(startDate)};\nconst legend=${J(legend)};\nconst lullLabel=${J(lullLabel)};\nconst months=${J(months)};\nconst quarters=${J(quarters)};\n// lulls    : [startWeek, endWeek, label]. Calendar lulls drawn as a hatched band across all lanes.\nconst lulls=${J(lulls)};\nconst lanes=[\n`
- +lanes.map(l=>` {n:${J(l.n)},${l.info?`info:${J(l.info)},`:""}items:[\n`+l.items.map(i=>"  "+itemStr(i)).join(",\n")+"]}").join(",\n")+"\n];\n";
 
 document.getElementById("cp").onclick=async()=>{await navigator.clipboard.writeText(ser());st.textContent="Copied. Paste over 'const editable' down in roadmap.js";st.className=""};
 document.getElementById("sv").onclick=async()=>{

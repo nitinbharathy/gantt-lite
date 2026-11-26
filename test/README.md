@@ -10,6 +10,19 @@ Browser tests, no Node. They run in headless Edge.
 
 `harness.js` loads `gantt.html`'s inline script into a fresh iframe with `roadmap-sample.js` as data and a fixed clock, then returns the exact string `render()` assigned to `#cw.innerHTML`. Cases are listed in `CASES`. Add checks in `run.html` with `test(name, fn)` and `eq(actual, expected)`.
 
+## What is covered
+
+- **Page goldens**: `gantt.html` run in an iframe (`legacyRun`), for view, edit with an item selected, edit with a lane selected, lulls hidden, and today outside the chart. Compared to `golden/goldens.js`.
+- **Renderer goldens**: the `gantt-render` block (`loadApi`) called directly with the same options on `roadmap-sample.js`, compared to the same goldens. Also checks that `renderGantt` does not mutate the model.
+- **idPrefix**: two charts with different prefixes have no duplicate `id`s.
+- **Escaping**: `<b>`, `&amp;`, quotes in title, lane name and info, months, quarter label and phase, lull label, item title and hover text. The SVG has no raw tags, parses as XML (the literal `<br>` in `data-d` is swapped out first, XML forbids `<` in attributes), shows the original text, and the tooltip expression gives the same text. Legend, lull checkbox label and Type options in `gantt.html` are only checked by looking for `esc(` in the source.
+- **Structure**: one `g[data-l][data-i]` per item, one lane name per lane, lulls shown or hidden, diamonds on milestones, dashes on TBC items.
+- **Edge cases**: no lanes, empty lane (also in edit mode), zero-width item, item ending at the last week, milestone bar under half a week (diamond only), label right / left / inside in white, unknown type.
+- **normalize**: warnings for unknown type, reversed or out-of-range weeks, months not matching quarters, non-contiguous quarters; none for `roadmap-sample.js` and `roadmap.js`; `lanes` and `kinds` shared with the input; defaults for a minimal input.
+- **Save round trip**: `ser()` output from the page, evaluated back, equals `roadmap-sample.js` as JSON.
+
+Not covered: the editor (drag, panels, undo) and the tooltip and legend toggles. See the manual checklist in `REFACTOR.md`.
+
 ## Goldens
 
 `golden/goldens.js` holds the expected SVG per case. Recapture only when the output is meant to change: `sh test/capture.sh`, then review the diff.

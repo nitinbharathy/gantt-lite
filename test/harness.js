@@ -34,19 +34,19 @@ addEventListener("message", e => {
   const run = src => { const s = document.createElement("script"); s.textContent = src; document.body.append(s); };
   run(block); run(gantt);
   if (code) run(code);
-  parent.postMessage({result: last}, "*");
+  parent.postMessage({result: last, out: window.__out}, "*");
 });
 <\/script></body></html>`;
 
 let ganttText = null;
-async function legacyCapture(c) {
+async function legacyRun(c) { // c.code may set window.__out; resolves {result: last #cw.innerHTML, out}
   if (ganttText === null) ganttText = await (await fetch(GANTT_URL)).text();
   const m = ganttText.match(/<script>([\s\S]*?)<\/script>/), b = ganttText.match(/<script id="gantt-render">([\s\S]*?)<\/script>/); // main inline script, render block
   if (!m || !b) throw new Error("scripts missing in gantt.html");
   const f = document.createElement("iframe");
   f.srcdoc = FRAME;
   const done = new Promise(res => addEventListener("message", function h(e) {
-    if (e.source === f.contentWindow) { removeEventListener("message", h); res(e.data.result); }
+    if (e.source === f.contentWindow) { removeEventListener("message", h); res(e.data); }
   }));
   f.onload = () => f.contentWindow.postMessage({block: b[1], gantt: m[1], clock: c.clock, code: c.code}, "*");
   document.body.append(f);
@@ -54,6 +54,7 @@ async function legacyCapture(c) {
   f.remove();
   return r;
 }
+const legacyCapture = async (c) => (await legacyRun(c)).result;
 
 async function captureAll() {
   const out = {};
@@ -78,6 +79,7 @@ async function loadApi() { // fresh copy of {normalize, renderGantt, ganttLayout
   if (!t) throw new Error("no gantt-render block in gantt.html");
   return new Function(t[1] + ";return {normalize,renderGantt,ganttLayout}")();
 }
-async function loadSample() { // fresh, unshared copy of the roadmap-sample.js constants
-  return new Function((await textOf(DATA_URL)) + ";return {title,kinds,msColor,startDate,legend,lullLabel,months,quarters,lulls,lanes}")();
-}
+const DATA_NAMES = "editable,title,kinds,msColor,startDate,legend,lullLabel,months,quarters,lulls,lanes";
+const evalData = (text) => new Function(text + "; return {" + DATA_NAMES + "}")(); // roadmap.js-style text -> its constants
+async function loadSample() { return evalData(await textOf(DATA_URL)); } // fresh, unshared copy of roadmap-sample.js
+async function loadRoadmap() { return evalData(await textOf(new URL("../roadmap.js", HERE).href)); }

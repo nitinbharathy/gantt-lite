@@ -84,6 +84,116 @@ test("escaping: legend, lull label and Type options are escaped by gantt.html", 
     if (!src.includes(want)) throw new Error("gantt.html does not escape: " + want);
 });
 
+// structure checks on the sample chart
+const parse = (svg) => html(svg);
+const gOf = (d, li, ii) => d.querySelector(`g[data-l="${li}"][data-i="${ii}"]`);
+test("structure: one group per item, one name per lane", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(await loadSample());
+  const d = parse(renderGantt(model, {now: NOW}));
+  eq(d.querySelectorAll("g[data-l][data-i]").length + "", model.lanes.reduce((n, l) => n + l.items.length, 0) + "");
+  eq([...d.querySelectorAll("text.lane")].map(t => t.textContent).join("|"), model.lanes.map(l => l.n).join("|"));
+});
+test("structure: lulls shown or hidden", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(await loadSample());
+  const vis = (o) => [...parse(renderGantt(model, o)).querySelectorAll("g.lull")].map(g => g.style.display || "shown").join();
+  eq(vis({now: NOW}), "shown,shown");
+  eq(vis({now: NOW, showLulls: false}), "none,none");
+});
+test("structure: milestones have a diamond, TBC items are dashed", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model} = normalize(await loadSample());
+  const d = parse(renderGantt(model, {now: NOW}));
+  let n = 0;
+  model.lanes.forEach((l, li) => l.items.forEach((i, ii) => {
+    const g = gOf(d, li, ii); n++;
+    eq(String(!!g.querySelector("path")), String(!!i.ms));
+    eq(String(g.innerHTML.includes("stroke-dasharray")), String(!!i.tbc));
+  }));
+  if (!n) throw new Error("no items");
+});
+
+// edge cases on hand-built data
+const mk = (lanes, extra) => ({kinds: {a: ["A", "#336699"], b: ["B", "#cc0000"]}, months: "123456789AB".split(""), quarters: [["Q", 0, 44, "p", "#2F6FDE"]], lulls: [], lanes, ...extra});
+const it = (t, s, more) => ({t, k: "a", s, d: "", ...more});
+const draw = async (raw, o) => { const {normalize, renderGantt} = await loadApi(), r = normalize(raw); return {...r, svg: renderGantt(r.model, {now: NOW, ...o})}; };
+test("edge: empty lanes", async () => {
+  const {svg, warnings} = await draw(mk([]));
+  eq(String(svg.endsWith("</svg>") && !svg.includes("NaN")), "true");
+  eq(parse(svg).querySelectorAll("g[data-i]").length + "", "0");
+  eq(warnings.length + "", "0");
+});
+test("edge: lane with no items, also in edit mode", async () => {
+  for (const editing of [false, true]) {
+    const {svg} = await draw(mk([{n: "Empty", items: []}, {n: "Next", items: [it("x", [1, 2])]}]), {editing});
+    const d = parse(svg);
+    eq([...d.querySelectorAll("text.lane")].map(t => t.textContent).join("|"), "Empty|Next");
+    eq(d.querySelectorAll("g[data-i]").length + "", "1");
+    eq(String(d.querySelectorAll("g.add").length), editing ? "2" : "0");
+  }
+});
+test("edge: zero-width item and item ending at END", async () => {
+  const {svg} = await draw(mk([{n: "L", items: [it("zero", [3, 3]), it("atend", [40, 44])]}]));
+  const d = parse(svg);
+  eq(gOf(d, 0, 0).querySelector("rect").getAttribute("width"), "0");
+  eq(String(+gOf(d, 0, 1).querySelector("rect").getAttribute("x") + +gOf(d, 0, 1).querySelector("rect").getAttribute("width")), "1290");
+  if (svg.includes("NaN")) throw new Error("NaN in output");
+});
+test("edge: milestone bar under half a week shows only the diamond", async () => {
+  const {svg} = await draw(mk([{n: "L", items: [it("tiny", [5, 5.05], {ms: 1}), it("wide", [5, 9], {ms: 1})]}]));
+  const d = parse(svg);
+  eq(gOf(d, 0, 0).querySelector("rect").getAttribute("opacity"), "0");
+  eq(String(!!gOf(d, 0, 0).querySelector("path")), "true");
+  eq(gOf(d, 0, 1).querySelector("rect").getAttribute("opacity"), "1");
+});
+test("edge: label goes right, then left, then inside in white", async () => {
+  const {svg} = await draw(mk([{n: "L", items: [it("right", [0, 2]), it("left", [40, 44]), it("inside of the bar", [0, 44])]}]));
+  const d = parse(svg), t = (i) => gOf(d, 0, i).querySelector("text");
+  eq(String(t(0).getAttribute("text-anchor")) + String(t(0).getAttribute("style")), "nullnull");
+  eq(t(1).getAttribute("text-anchor"), "end");
+  eq(t(2).getAttribute("style"), "fill:#fff");
+});
+test("edge: unknown type does not throw, normalize warns", async () => {
+  const {svg, warnings} = await draw(mk([{n: "L", items: [it("odd", [1, 2], {k: "zzz"})]}]));
+  eq(String(svg.endsWith("</svg>")), "true");
+  eq(String(warnings.some(w => /unknown type "zzz"/.test(w))), "true");
+});
+
+// normalize warnings
+const warns = async (raw) => (await draw(raw)).warnings;
+const has = (ws, re) => { if (!ws.some(w => re.test(w))) throw new Error("no warning matching " + re + " in " + JSON.stringify(ws)); };
+test("normalize: warns on reversed and out-of-range weeks", async () => {
+  has(await warns(mk([{n: "L", items: [it("r", [5, 3])]}])), /reversed/);
+  has(await warns(mk([{n: "L", items: [it("o", [40, 50])]}])), /outside/);
+  has(await warns(mk([{n: "L", items: [it("n", [-1, 2])]}])), /outside/);
+});
+test("normalize: warns when months do not match the quarters", async () => {
+  has(await warns(mk([], {months: ["a", "b"]})), /months/);
+});
+test("normalize: warns when quarters are not contiguous from 0", async () => {
+  has(await warns(mk([], {quarters: [["A", 0, 10, "", "#000"], ["B", 12, 44, "", "#000"]]})), /quarter "B"/);
+  has(await warns(mk([], {quarters: [["A", 4, 44, "", "#000"]]})), /quarter "A"/);
+});
+test("normalize: no warnings for the sample data or roadmap.js", async () => {
+  const {normalize} = await loadApi();
+  eq(JSON.stringify(normalize(await loadSample()).warnings), "[]");
+  eq(JSON.stringify(normalize(await loadRoadmap()).warnings), "[]");
+});
+test("normalize: shares lanes and kinds with the input", async () => {
+  const {normalize} = await loadApi(), raw = await loadSample(), {model} = normalize(raw);
+  eq(String(model.lanes === raw.lanes && model.kinds === raw.kinds), "true");
+});
+test("normalize: defaults for a minimal input", async () => {
+  const {normalize, renderGantt} = await loadApi(), {model, warnings} = normalize({lanes: [{n: "L", items: [{t: "x", k: "a", s: [1, 6]}]}]});
+  eq(String(model.END), "8");
+  eq(JSON.stringify(warnings.map(w => /unknown type/.test(w))), "[true]");
+  eq(String(renderGantt(model, {}).includes("<svg")), "true");
+});
+
+// Save format round trip: ser() output evaluated back equals the data it started from
+test("round trip: ser() output gives back the sample data", async () => {
+  const out = (await legacyRun({clock: [2027, 11, 10], code: "window.__out=ser()"})).out;
+  eq(JSON.stringify(evalData(out)), JSON.stringify(await loadSample()));
+});
+
 // --- runner ---
 (async () => {
   let pass = 0, fails = [];
