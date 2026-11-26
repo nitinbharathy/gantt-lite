@@ -66,7 +66,9 @@ s+=`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse"
 const lullOn=document.getElementById("lt").checked;
 lulls.forEach(u=>{s+=`<g class="lull" style="${lullOn?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#hatch)" opacity=".9"/></g>`});
 quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
-s+=`<line x1="${x(todayWeek)}" x2="${x(todayWeek)}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${x(todayWeek)+3}" y="${H-2}" fill="#d1242f" style="fill:#d1242f">today</text>`;
+const now=new Date(),sd=startDate.split("-").map(Number);
+const todayWeek=4*((now.getFullYear()-sd[0])*12+now.getMonth()-(sd[1]-1))+4*(now.getDate()-1)/new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+if(todayWeek>=0&&todayWeek<=END){const tx=x(todayWeek),right=tx>W-120;s+=`<line x1="${tx}" x2="${tx}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${right?tx-3:tx+3}" y="${H-2}" text-anchor="${right?"end":"start"}" fill="#d1242f" style="fill:#d1242f">today ${now.getDate()} ${now.toLocaleString("en-GB",{month:"short"})} ${now.getFullYear()}</text>`}
 rows.forEach(({l,y,nr},li)=>{
  if(editing){const on=selL===l;s+=`<g class="ln" data-ln="${li}" style="cursor:pointer"><rect x="0" y="${y}" width="${LW-8}" height="${nr*RH}" rx="4" fill="${on?"#0969da":"#fff"}" fill-opacity="${on?.08:0}" ${on?'stroke="#0969da" stroke-dasharray="3 2"':""}/>`}
  s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
@@ -169,7 +171,7 @@ window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.return
 
 const itemStr=i=>`{t:${J(i.t)},k:${J(i.k)},s:[${i.s[0]},${i.s[1]}],d:${J(i.d||"")}${i.ms?",ms:1":""}${i.tbc?",tbc:1":""}}`;
 // everything from "const editable" down is regenerated; the comment header above it is kept as is
-const ser=()=>`const editable=${editable};\nconst title=${J(title)};\nconst kinds=${J(kinds)};\nconst msColor=${J(msColor)};\nconst todayWeek=${todayWeek};\nconst legend=${J(legend)};\nconst lullLabel=${J(lullLabel)};\nconst months=${J(months)};\nconst quarters=${J(quarters)};\n// lulls    : [startWeek, endWeek, label]. Calendar lulls drawn as a hatched band across all lanes.\nconst lulls=${J(lulls)};\nconst lanes=[\n`
+const ser=()=>`const editable=${editable};\nconst title=${J(title)};\nconst kinds=${J(kinds)};\nconst msColor=${J(msColor)};\nconst startDate=${J(startDate)};\nconst legend=${J(legend)};\nconst lullLabel=${J(lullLabel)};\nconst months=${J(months)};\nconst quarters=${J(quarters)};\n// lulls    : [startWeek, endWeek, label]. Calendar lulls drawn as a hatched band across all lanes.\nconst lulls=${J(lulls)};\nconst lanes=[\n`
  +lanes.map(l=>` {n:${J(l.n)},${l.info?`info:${J(l.info)},`:""}items:[\n`+l.items.map(i=>"  "+itemStr(i)).join(",\n")+"]}").join(",\n")+"\n];\n";
 
 document.getElementById("cp").onclick=async()=>{await navigator.clipboard.writeText(ser());st.textContent="Copied. Paste over 'const editable' down in roadmap.js";st.className=""};

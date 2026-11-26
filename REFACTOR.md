@@ -16,7 +16,7 @@ Pull the drawing code out of `gantt.html` into `renderGantt(data, container)` so
 
 Globals that the draw code reads directly:
 
-- Data from `roadmap.js`: `title`, `kinds`, `msColor`, `todayWeek`, `legend`, `lullLabel`, `months`, `quarters`, `lulls`, `lanes`, `editable`.
+- Data from `roadmap.js`: `title`, `kinds`, `msColor`, `startDate`, `legend`, `lullLabel`, `months`, `quarters`, `lulls`, `lanes`, `editable`.
 - Derived in `gantt.html`: `col` (kind to colour), `END`, `W`, `LW`, `TOP`, `RH`, `PAD`, `mw`, `x()`, `esc()`, `wrap()`, `wk()`.
 - Editor state: `sel`, `editing` (draws the selection ring and the "+ Add item" rows).
 - DOM: `document.getElementById("lt")` (lulls checkbox) and `cw.innerHTML = ...` (output).
@@ -27,7 +27,7 @@ Globals that the draw code reads directly:
 1. `renderGantt(data, opts)` returns an SVG string. Pure: no DOM, no globals. `opts` carries `editing`, `selected`, `showLulls`, and an id prefix.
 2. `gantt.html` keeps the editor and calls `cw.innerHTML = renderGantt(...)`.
 3. The renderer lives in its own file (for example `gantt-render.js`) that works as a browser `<script>` and under Node (`module.exports` guarded by `typeof module`). Keep it loadable by a script tag, because `file://` pages cannot `fetch()` or use ES modules reliably.
-4. Defaults for optional fields (`kinds`, `months`, `quarters`, `lulls`, `legend`, `msColor`, `todayWeek`) so an embedded block can be small.
+4. Defaults for optional fields (`kinds`, `months`, `quarters`, `lulls`, `legend`, `msColor`, `startDate`) so an embedded block can be small.
 
 ## Risks to watch
 

@@ -22,7 +22,7 @@ Time is in weeks from the start date, 4 weeks to a month. The full spec, with ru
 - item: `t` title, `k` type (sets colour), `s` `[startWeek, endWeek]`, `d` hover text, `ms` 1 for a milestone diamond, `tbc` 1 for a dashed pale bar.
 - `kinds`: item type to legend label and colour.
 - `months`, `quarters`, `lulls`: the axis, quarter headings and hatched calendar lulls.
-- `todayWeek`: position of the red today line.
+- `startDate`: date of week 0 (`"YYYY-MM-DD"`). The red today line is drawn from the current date, with the date shown beside it.
 
 ## Edit mode
 

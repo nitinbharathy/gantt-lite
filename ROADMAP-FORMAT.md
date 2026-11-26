@@ -19,7 +19,7 @@ Spec for `roadmap.js`, the data file read by `gantt.html`. Written so a person o
 | `title` | string | Page heading and browser tab title. |
 | `kinds` | object | Item type to `[legend label, colour]`. Example: `"dev":["Development","#6B7280"]`. |
 | `msColor` | string | Colour of milestone diamonds. |
-| `todayWeek` | number | Week position of the red "today" line. |
+| `startDate` | string `"YYYY-MM-DD"` | First day of week 0; use the 1st of the first month in `months`. The red "today" line is placed from the viewer's current date and labelled with it. Hidden when today is outside the chart. |
 | `legend` | array of strings | Extra plain-text legend entries shown after the colour swatches. May be `[]`. |
 | `lullLabel` | string | Label of the show/hide lulls checkbox. |
 | `months` | array of strings | Month labels, left to right, 4 weeks each. Length must be `END / 4`. |
@@ -71,7 +71,7 @@ const editable=true;
 const title="Small plan";
 const kinds={"dev":["Development","#6B7280"],"go":["Go live","#2F6FDE"]};
 const msColor="#1B9E77";
-const todayWeek=1;
+const startDate="2027-01-01";
 const legend=[];
 const lullLabel="Show lull periods";
 const months=["Jan","Feb","Mar"];

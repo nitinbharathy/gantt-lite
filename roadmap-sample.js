@@ -19,14 +19,14 @@
 // title    : heading above the chart.
 // kinds    : item type (the k field) -> legend label and colour.
 // msColor  : colour of milestone diamonds.
-// todayWeek: week position of the red "today" line.
+// startDate: "YYYY-MM-DD", the first day of week 0 (use the 1st of the first month). The red "today" line is placed from the current date and labelled with it; it is hidden when today is outside the chart.
 // legend   : extra plain-text legend entries, after the colour swatches.
 // lullLabel: label of the show/hide lulls checkbox.
 const editable=true;
 const title="Example project plan";
 const kinds={"dev":["Development","#6B7280"],"uat":["UAT and training","#C13584"],"go":["Onboarding / cutover","#2F6FDE"],"roll":["Rollout","#8E5BD9"],"ref":["Detailed on another slide","#E08A00"],"adm":["Admin","#A8AFB8"]};
 const msColor="#1B9E77";
-const todayWeek=1.5;
+const startDate="2027-08-01";
 const legend=["White ticks inside a bar = 1 week","Pilot = limited early users"];
 const lullLabel="Show lull periods";
 const months=["Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun"];
