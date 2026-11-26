@@ -1,6 +1,12 @@
 # Refactor notes: reusable renderer
 
-Status: in progress (steps 1 to 4 below). Written at commit `c5724a2`, revised at `a4b0c55`. Line numbers below refer to `a4b0c55` and will drift.
+Status: steps 1 to 4 done (`8c4057e` to `05eb36c`). `bash test/run.sh` (30 renderer tests) and `bash test/smoke.sh` (13 scripted editor checks) pass. Still to check by hand: Save to file, Discard, and real mouse feel. Step 5 not started. Written at commit `c5724a2`, revised at `a4b0c55`. Line numbers below refer to `a4b0c55` and will drift.
+
+Outcome notes:
+- API: `normalize(raw) → {model, warnings}`, `renderGantt(model, opts) → SVG string`, `ganttLayout(model) → {W, LW, RH, mw, x}`, all in the `gantt-render` block. Only `lanes` is required by `normalize`.
+- Warnings go to the browser console for now (step 5 shows them on screen).
+- An item with an unknown `k` is now drawn grey (`#808080`) instead of with no fill.
+- `ser()`, `itemStr` and `J` moved to the top level of the main script so tests can call them. Behaviour unchanged.
 
 ## Goal
 
