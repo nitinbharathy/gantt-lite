@@ -35,7 +35,7 @@ const quarters=[["Q3 2027",0,8,"Pilot","#2F6FDE"],["Q4 2027",8,20,"Pilot","#2F6F
 const lulls=[[7,9,"Holiday break A"],[13,14,"Holiday break B"]];
 const lanes=[
  {n:"Product A",info:["Module one","Module two","Module three","Messaging link","Analytics"],items:[
-  {t:"Build",k:"dev",s:[1,7],d:""},
+  {t:"Build",k:"dev",s:[8,18],d:""},
   {t:"Internal trial",k:"dev",s:[7,9],d:""},
   {t:"UAT + training",k:"uat",s:[10,12],d:""},
   {t:"Group 1 onboarding (manual)",k:"go",s:[11,15],d:""},
