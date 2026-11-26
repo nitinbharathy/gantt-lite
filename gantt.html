@@ -28,25 +28,96 @@ button{font:12px system-ui,sans-serif;padding:4px 8px;cursor:pointer}
 <div style="display:flex;gap:16px;align-items:center;margin:12px 0 0"><span id="ls" style="cursor:pointer;color:var(--mute);white-space:nowrap">Show legend</span><div class="legend" id="lg" style="margin:0;display:none"></div></div>
 <div id="tip"></div>
 <script src="roadmap.js"></script>
-<script>
-document.title=title;document.getElementById("h").textContent=title;
-const col={};
-function refreshKinds(){ // rebuild the colour map and the legend from `kinds` (also called by the types editor)
-for(const k in col)delete col[k];
-Object.entries(kinds).forEach(([k,v])=>col[k]=v[1]);
-document.getElementById("lg").innerHTML=Object.values(kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${esc(v[0])}</span>`).join("")
-+`<span><i class="sw" style="background:${msColor};transform:rotate(45deg) scale(.8)"></i>Milestone</span>`
-+`<span><i class="sw" style="border:1.5px dashed #6B7280;background:rgba(107,114,128,.18)"></i>Dashed = plan not final (TBC)</span>`
-+legend.map(t=>`<span>${t}</span>`).join("");
-}
-document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${lullLabel}`;
-const END=quarters[quarters.length-1][2];
-const W=1300,LW=210,TOP=70,RH=28,PAD=12,mw=(W-LW-10)/END;
-const x=m=>LW+m*mw;
+<script id="gantt-render">
+/* Pure renderer: normalize(raw) -> {model,warnings}; renderGantt(model,opts) -> SVG string; ganttLayout(model) -> {W,LW,RH,mw,x}.
+   Touches no DOM, no globals and no clock. model.lanes and model.kinds are the caller's own objects (not copies), so in-place edits show on the next render. */
+const {normalize,renderGantt,ganttLayout}=(()=>{
+const W=1300,LW=210,TOP=70,RH=28,PAD=12,WK=1;
 const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const wrap=(t,n=34)=>{const o=[];let c="";t.split(" ").forEach(w=>{if(c&&(c+" "+w).length>n){o.push(c);c=w}else c=c?c+" "+w:w});o.push(c);return o};
-const WK=1;
-const wk=(i,yy)=>{let o="";if(i.s[1]-i.s[0]<=WK+0.01)return o;for(let m=i.s[0]+WK;m<i.s[1]-0.01;m+=WK){o+=`<line x1="${x(m)}" x2="${x(m)}" y1="${yy+4}" y2="${yy+22}" stroke="#fff" stroke-width="1" opacity=".8"/>`}return o};
+// raw: lanes (required); title, kinds, msColor, startDate, legend, lullLabel, months, quarters, lulls (optional, defaults filled in)
+function normalize(raw){
+ const warnings=[],r=raw||{};
+ const lanes=r.lanes||[],kinds=r.kinds||{};
+ const end=r.quarters&&r.quarters.length?r.quarters[r.quarters.length-1][2]:r.months&&r.months.length?r.months.length*4:Math.max(4,Math.ceil(Math.max(0,...lanes.flatMap(l=>(l.items||[]).map(i=>i.s[1])))/4)*4);
+ const months=r.months||Array.from({length:end/4},(_,i)=>"M"+(i+1));
+ const quarters=r.quarters&&r.quarters.length?r.quarters:[["",0,end,"","#6B7280"]];
+ const model={title:r.title||"",kinds,msColor:r.msColor||"#1B9E77",startDate:r.startDate||null,legend:r.legend||[],lullLabel:r.lullLabel||"Show lull periods",months,quarters,lulls:r.lulls||[],lanes,END:end};
+ if(months.length*4!==end)warnings.push(`months (${months.length}) do not fill the chart: ${months.length*4} weeks vs ${end}`);
+ quarters.forEach((q,n)=>{const e=n?quarters[n-1][2]:0;if(q[1]!==e)warnings.push(`quarter "${q[0]}" starts at week ${q[1]}, expected ${e}`)});
+ lanes.forEach(l=>(l.items||[]).forEach(i=>{
+  if(!(i.k in kinds))warnings.push(`item "${i.t}" in lane "${l.n}": unknown type "${i.k}"`);
+  if(!(i.s&&i.s[0]<=i.s[1]))warnings.push(`item "${i.t}" in lane "${l.n}": weeks are reversed or missing`);
+  else if(i.s[0]<0||i.s[1]>end)warnings.push(`item "${i.t}" in lane "${l.n}": weeks ${i.s[0]} to ${i.s[1]} are outside 0 to ${end}`);
+ }));
+ return {model,warnings};
+}
+function ganttLayout(model){const mw=(W-LW-10)/model.END;return{W,LW,RH,mw,x:m=>LW+m*mw}}
+// opts: editing, selected (item), selectedLane (lane), showLulls (default true), now (Date; no today line without it), idPrefix
+function renderGantt(model,opts){
+ const {editing,selected:sel,selectedLane:selL,now,idPrefix:p=""}=opts||{},showLulls=!opts||opts.showLulls!==false;
+ const {title,kinds,msColor,startDate,months,quarters,lulls,lanes,END}=model,{mw,x}=ganttLayout(model);
+ const wk=(i,yy)=>{let o="";if(i.s[1]-i.s[0]<=WK+0.01)return o;for(let m=i.s[0]+WK;m<i.s[1]-0.01;m+=WK){o+=`<line x1="${x(m)}" x2="${x(m)}" y1="${yy+4}" y2="${yy+22}" stroke="#fff" stroke-width="1" opacity=".8"/>`}return o};
+ let y=TOP,rows=[];
+ lanes.forEach(l=>{const lines=l.info&&l.info.length?wrap(l.info.join(", ")):[];const nr=Math.max(l.items.length+(editing?1:0),Math.ceil((lines.length*15+24)/RH));rows.push({l,lines,y,nr});y+=nr*RH+PAD});
+ const H=y+10+(editing?32:0);
+ let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+ quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
+ months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
+ quarters.forEach(q=>{s+=`<rect x="${x(q[1])}" y="62" width="${x(q[2])-x(q[1])}" height="${H-62}" fill="${q[4]}" opacity=".06"/>`});
+ s+=`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
+ lulls.forEach(u=>{s+=`<g class="lull" style="${showLulls?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#hatch)" opacity=".9"/></g>`});
+ quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
+ if(now&&startDate){
+  const sd=startDate.split("-").map(Number);
+  const todayWeek=4*((now.getFullYear()-sd[0])*12+now.getMonth()-(sd[1]-1))+4*(now.getDate()-1)/new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
+  if(todayWeek>=0&&todayWeek<=END){const tx=x(todayWeek),right=tx>W-120;s+=`<line x1="${tx}" x2="${tx}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${right?tx-3:tx+3}" y="${H-2}" text-anchor="${right?"end":"start"}" fill="#d1242f" style="fill:#d1242f">today ${now.getDate()} ${now.toLocaleString("en-GB",{month:"short"})} ${now.getFullYear()}</text>`}
+ }
+ rows.forEach(({l,lines,y,nr},li)=>{
+  if(editing){const on=selL===l;s+=`<g class="ln" data-ln="${li}" style="cursor:pointer"><rect x="0" y="${y}" width="${LW-8}" height="${nr*RH}" rx="4" fill="${on?"#0969da":"#fff"}" fill-opacity="${on?.08:0}" ${on?'stroke="#0969da" stroke-dasharray="3 2"':""}/>`}
+  s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
+  lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${t}</text>`});
+  if(editing)s+="</g>";
+  s+=`<line x1="0" x2="${W}" y1="${y+nr*RH+PAD/2}" y2="${y+nr*RH+PAD/2}" stroke="#e6e8eb"/>`;
+  if(editing)s+=`<g class="add" data-l="${li}" style="cursor:pointer"><rect x="${LW+2}" y="${y+l.items.length*RH+6}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="${LW+10}" y="${y+l.items.length*RH+20}" style="fill:#0969da">+ Add item</text></g>`;
+  l.items.forEach((i,ii)=>{
+   const yy=y+ii*RH+4,a=x(i.s[0]),b=x(i.s[1]),c=kinds[i.k]?kinds[i.k][1]:"#808080";
+   const wl=w=>months[Math.floor(w/4)]+" wk "+(w%4+1),w0=Math.floor(i.s[0]+.001),w1=Math.max(w0,Math.ceil(i.s[1]-.001)-1);
+   const when=w0==w1?wl(w0):wl(w0)+" to "+wl(w1);
+   const data=`data-l="${li}" data-i="${ii}" data-t="${esc(i.t).replace(/"/g,'&quot;')}" data-d="${(when+(i.d?"<br>"+i.d:"")).replace(/"/g,'&quot;')}"`;
+   let label=esc(i.t)+(i.tbc?" (TBC)":"");
+   const ring=(editing&&sel===i)?`<rect x="${a-3}" y="${yy+1}" width="${Math.max(b-a,12)+6}" height="24" rx="6" fill="none" stroke="#0969da" stroke-width="1.5" stroke-dasharray="3 2"/>`:"";
+   if(i.ms){const cx=(i.s[1]-i.s[0]<.4)?a:b-4;
+    const dia=i.tbc?`fill="#fff" stroke="${msColor}" stroke-width="2" stroke-dasharray="3 2"`:`fill="${msColor}" stroke="#fff" stroke-width="2"`;
+    const mbar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
+    s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${Math.max(b-a,0)}" height="18" rx="4" ${mbar} opacity="${b-a<5?0:1}"/>${wk(i,yy)}<path d="M${cx} ${yy+5} l6 8 l-6 8 l-6 -8z" ${dia}/><text x="${cx+11}" y="${yy+18}">${label}</text></g>`;
+   } else {
+    const tw=label.length*6.5,fitR=b+5+tw<=W,fitL=a-5-tw>=LW;
+    const lx=fitR?b+5:fitL?a-5:a+8,la=!fitR&&fitL?'text-anchor="end" ':"",ls2=fitR||fitL?"":'style="fill:#fff"';
+    const bar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
+    s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${b-a}" height="18" rx="4" ${bar}/>${wk(i,yy)}<text x="${lx}" y="${yy+18}" ${la}${ls2}>${label}</text></g>`;
+   }
+  });
+ });
+ if(editing)s+=`<g class="addl" style="cursor:pointer"><rect x="2" y="${y+2}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="10" y="${y+16}" style="fill:#0969da">+ Add lane</text></g>`;
+ return s+"</svg>";
+}
+return {normalize,renderGantt,ganttLayout};
+})();
+</script>
+<script>
+document.title=title;document.getElementById("h").textContent=title;
+const {model,warnings}=normalize({title,kinds,msColor,startDate,legend,lullLabel,months,quarters,lulls,lanes});
+warnings.forEach(w=>console.warn(w));
+const {W,RH,mw,x}=ganttLayout(model),END=model.END;
+const esc=t=>String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function refreshKinds(){ // rebuild the legend from `kinds` (also called by the types editor)
+document.getElementById("lg").innerHTML=Object.values(model.kinds).map(v=>`<span><i class="sw" style="background:${v[1]}"></i>${esc(v[0])}</span>`).join("")
++`<span><i class="sw" style="background:${model.msColor};transform:rotate(45deg) scale(.8)"></i>Milestone</span>`
++`<span><i class="sw" style="border:1.5px dashed #6B7280;background:rgba(107,114,128,.18)"></i>Dashed = plan not final (TBC)</span>`
++model.legend.map(t=>`<span>${t}</span>`).join("");
+}
+document.getElementById("lb").innerHTML=`<input type="checkbox" id="lt" checked>${model.lullLabel}`;
 refreshKinds();
 const cw=document.getElementById("cw");
 let typesOpen=false; // types editor panel open (while editing)
@@ -54,51 +125,7 @@ let sel=null; // selected item (while editing)
 let selL=null; // selected lane (while editing)
 let editing=false; // true only after the Edit button is clicked
 
-function render(){
-let y=TOP,rows=[];
-lanes.forEach(l=>{l.items.forEach((i,n)=>i.row=n);l.lines=[];if(l.info&&l.info.length)wrap(l.info.join(", ")).forEach(w=>l.lines.push(w));const nr=Math.max(l.items.length+(editing?1:0),Math.ceil((l.lines.length*15+24)/RH));rows.push({l,y,nr});y+=nr*RH+PAD});
-const H=y+10+(editing?32:0);
-let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-quarters.forEach(q=>{s+=`<text class="m" x="${x(q[1])+4}" y="14" style="font-weight:700">${q[0]}</text><text x="${x(q[1])+4}" y="30" style="font-weight:700;fill:${q[4]}">${q[3]}</text>`});
-months.forEach((m,i)=>{s+=`<text class="m" x="${x(i*4)+mw*2}" y="56" text-anchor="middle">${m}</text>`;s+=`<line x1="${x(i*4)}" x2="${x(i*4)}" y1="62" y2="${H}" stroke="#e6e8eb"/>`});
-quarters.forEach(q=>{s+=`<rect x="${x(q[1])}" y="62" width="${x(q[2])-x(q[1])}" height="${H-62}" fill="${q[4]}" opacity=".06"/>`});
-s+=`<defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3f4f6"/><line x1="0" y1="0" x2="0" y2="6" stroke="#c9ced4" stroke-width="2"/></pattern></defs>`;
-const lullOn=document.getElementById("lt").checked;
-lulls.forEach(u=>{s+=`<g class="lull" style="${lullOn?"":"display:none"}" data-t="${u[2]}" data-d=""><rect x="${x(u[0])}" y="62" width="${x(u[1])-x(u[0])}" height="${H-62}" fill="url(#hatch)" opacity=".9"/></g>`});
-quarters.forEach(q=>{s+=`<line x1="${x(q[1])}" x2="${x(q[1])}" y1="0" y2="${H}" stroke="#c9ced4"/>`});
-const now=new Date(),sd=startDate.split("-").map(Number);
-const todayWeek=4*((now.getFullYear()-sd[0])*12+now.getMonth()-(sd[1]-1))+4*(now.getDate()-1)/new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
-if(todayWeek>=0&&todayWeek<=END){const tx=x(todayWeek),right=tx>W-120;s+=`<line x1="${tx}" x2="${tx}" y1="62" y2="${H}" stroke="#d1242f" stroke-dasharray="3 3"/><text x="${right?tx-3:tx+3}" y="${H-2}" text-anchor="${right?"end":"start"}" fill="#d1242f" style="fill:#d1242f">today ${now.getDate()} ${now.toLocaleString("en-GB",{month:"short"})} ${now.getFullYear()}</text>`}
-rows.forEach(({l,y,nr},li)=>{
- if(editing){const on=selL===l;s+=`<g class="ln" data-ln="${li}" style="cursor:pointer"><rect x="0" y="${y}" width="${LW-8}" height="${nr*RH}" rx="4" fill="${on?"#0969da":"#fff"}" fill-opacity="${on?.08:0}" ${on?'stroke="#0969da" stroke-dasharray="3 2"':""}/>`}
- s+=`<text class="lane" x="0" y="${y+20}" font-weight="600">${l.n}</text>`;
- l.lines.forEach((t,n)=>{s+=`<text class="m" x="10" y="${y+38+n*15}" xml:space="preserve" style="font-size:11px;white-space:pre">${t}</text>`});
- if(editing)s+="</g>";
- s+=`<line x1="0" x2="${W}" y1="${y+nr*RH+PAD/2}" y2="${y+nr*RH+PAD/2}" stroke="#e6e8eb"/>`;
- if(editing)s+=`<g class="add" data-l="${li}" style="cursor:pointer"><rect x="${LW+2}" y="${y+l.items.length*RH+6}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="${LW+10}" y="${y+l.items.length*RH+20}" style="fill:#0969da">+ Add item</text></g>`;
- l.items.forEach((i,ii)=>{
-  const yy=y+(i.row||0)*RH+4,a=x(i.s[0]),b=x(i.s[1]),c=col[i.k];
-  const wl=w=>months[Math.floor(w/4)]+" wk "+(w%4+1),w0=Math.floor(i.s[0]+.001),w1=Math.max(w0,Math.ceil(i.s[1]-.001)-1);
-  const when=w0==w1?wl(w0):wl(w0)+" to "+wl(w1);
-  const data=`data-l="${li}" data-i="${ii}" data-t="${esc(i.t).replace(/"/g,'&quot;')}" data-d="${(when+(i.d?"<br>"+i.d:"")).replace(/"/g,'&quot;')}"`;
-  let label=esc(i.t)+(i.tbc?" (TBC)":"");
-  const ring=(editing&&sel===i)?`<rect x="${a-3}" y="${yy+1}" width="${Math.max(b-a,12)+6}" height="24" rx="6" fill="none" stroke="#0969da" stroke-width="1.5" stroke-dasharray="3 2"/>`:"";
-  if(i.ms){const cx=(i.s[1]-i.s[0]<.4)?a:b-4;
-   const dia=i.tbc?`fill="#fff" stroke="${msColor}" stroke-width="2" stroke-dasharray="3 2"`:`fill="${msColor}" stroke="#fff" stroke-width="2"`;
-   const mbar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
-   s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${Math.max(b-a,0)}" height="18" rx="4" ${mbar} opacity="${b-a<5?0:1}"/>${wk(i,yy)}<path d="M${cx} ${yy+5} l6 8 l-6 8 l-6 -8z" ${dia}/><text x="${cx+11}" y="${yy+18}">${label}</text></g>`;
-  } else {
-   const tw=label.length*6.5,fitR=b+5+tw<=W,fitL=a-5-tw>=LW;
-   const lx=fitR?b+5:fitL?a-5:a+8,la=!fitR&&fitL?'text-anchor="end" ':"",ls2=fitR||fitL?"":'style="fill:#fff"';
-   const bar=i.tbc?`fill="${c}" fill-opacity=".18" stroke="${c}" stroke-width="1.5" stroke-dasharray="4 3"`:`fill="${c}"`;
-   s+=`<g ${data}>${ring}<rect x="${a}" y="${yy+4}" width="${b-a}" height="18" rx="4" ${bar}/>${wk(i,yy)}<text x="${lx}" y="${yy+18}" ${la}${ls2}>${label}</text></g>`;
-  }
- });
-});
-if(editing)s+=`<g class="addl" style="cursor:pointer"><rect x="2" y="${y+2}" width="86" height="20" rx="4" fill="#f6f8fa" stroke="#c9ced4" stroke-dasharray="3 2"/><text x="10" y="${y+16}" style="fill:#0969da">+ Add lane</text></g>`;
-s+="</svg>";
-cw.innerHTML=s;
-}
+function render(){cw.innerHTML=renderGantt(model,{editing,selected:sel,selectedLane:selL,showLulls:document.getElementById("lt").checked,now:new Date()})}
 render();
 
 const tip=document.getElementById("tip");

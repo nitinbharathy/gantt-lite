@@ -23,7 +23,7 @@ const FRAME = `<!doctype html><html><body>
 <script src="${DATA_URL}"><\/script>
 <script>
 addEventListener("message", e => {
-  const {gantt, clock, code} = e.data;
+  const {block, gantt, clock, code} = e.data;
   const cw = document.getElementById("cw");
   const setter = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML").set;
   let last = null;
@@ -32,7 +32,7 @@ addEventListener("message", e => {
   const Real = Date, fixed = new Real(clock[0], clock[1] - 1, clock[2], 12).getTime();
   window.Date = class extends Real { constructor(...a) { super(...(a.length ? a : [fixed])); } static now() { return fixed; } };
   const run = src => { const s = document.createElement("script"); s.textContent = src; document.body.append(s); };
-  run(gantt);
+  run(block); run(gantt);
   if (code) run(code);
   parent.postMessage({result: last}, "*");
 });
@@ -41,14 +41,14 @@ addEventListener("message", e => {
 let ganttText = null;
 async function legacyCapture(c) {
   if (ganttText === null) ganttText = await (await fetch(GANTT_URL)).text();
-  const m = ganttText.match(/<script>([\s\S]*?)<\/script>/); // the inline script (no src)
-  if (!m) throw new Error("no inline script in gantt.html");
+  const m = ganttText.match(/<script>([\s\S]*?)<\/script>/), b = ganttText.match(/<script id="gantt-render">([\s\S]*?)<\/script>/); // main inline script, render block
+  if (!m || !b) throw new Error("scripts missing in gantt.html");
   const f = document.createElement("iframe");
   f.srcdoc = FRAME;
   const done = new Promise(res => addEventListener("message", function h(e) {
     if (e.source === f.contentWindow) { removeEventListener("message", h); res(e.data.result); }
   }));
-  f.onload = () => f.contentWindow.postMessage({gantt: m[1], clock: c.clock, code: c.code}, "*");
+  f.onload = () => f.contentWindow.postMessage({block: b[1], gantt: m[1], clock: c.clock, code: c.code}, "*");
   document.body.append(f);
   const r = await done;
   f.remove();
@@ -68,4 +68,16 @@ function emit(text) {
   const pre = document.createElement("pre");
   pre.id = "b64"; pre.textContent = btoa(bin);
   document.body.append(pre);
+}
+
+// ---- direct access to the renderer (no iframe): the gantt-render block and the sample data ----
+const textCache = {};
+async function textOf(url) { return textCache[url] ??= await (await fetch(url)).text(); }
+async function loadApi() { // fresh copy of {normalize, renderGantt, ganttLayout} from gantt.html
+  const t = (await textOf(GANTT_URL)).match(/<script id="gantt-render">([\s\S]*?)<\/script>/);
+  if (!t) throw new Error("no gantt-render block in gantt.html");
+  return new Function(t[1] + ";return {normalize,renderGantt,ganttLayout}")();
+}
+async function loadSample() { // fresh, unshared copy of the roadmap-sample.js constants
+  return new Function((await textOf(DATA_URL)) + ";return {title,kinds,msColor,startDate,legend,lullLabel,months,quarters,lulls,lanes}")();
 }

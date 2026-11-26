@@ -17,6 +17,23 @@ function eq(a, b) {
 for (const k in CASES)
   test("legacy golden: " + k, async () => eq(await legacyCapture(CASES[k]), GOLDEN[k]));
 
+// direct renderer: same opts as the golden cases, same goldens
+const NOW = new Date(2027, 10, 10, 12), NOW_OUT = new Date(2026, 10, 26, 12);
+const DIRECT = {
+  "view":      (m) => ({now: NOW}),
+  "edit":      (m) => ({now: NOW, editing: true, selected: m.lanes[0].items[2]}),
+  "edit-lane": (m) => ({now: NOW, editing: true, selectedLane: m.lanes[1]}),
+  "nolulls":   (m) => ({now: NOW, showLulls: false}),
+  "outside":   (m) => ({now: NOW_OUT}),
+};
+for (const k in DIRECT)
+  test("renderGantt golden: " + k, async () => {
+    const {normalize, renderGantt} = await loadApi(), {model} = normalize(await loadSample());
+    const before = JSON.stringify(model), svg = renderGantt(model, DIRECT[k](model));
+    eq(svg, GOLDEN[k]);
+    eq(JSON.stringify(model), before); // renderGantt must not touch the data
+  });
+
 // --- runner ---
 (async () => {
   let pass = 0, fails = [];
